@@ -17,14 +17,41 @@ class _SplashScreenState extends State<SplashScreen> {
   late VideoPlayerController _controller;
   bool _navigated = false;
   bool _isInitialized = false;
+  String _errorMsg = '';
+  bool _showError = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeVideo();
+    _setupApp();
   }
 
-  void _initializeVideo() async {
+  Future<void> _setupApp() async {
+    try {
+      await _initializeVideo();
+
+      // Add a short timeout to ensure we navigate even if there are issues
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!_navigated) {
+          print('Timeout reached, forcing navigation');
+          _handleNavigation();
+        }
+      });
+    } catch (e) {
+      print('Error in setup: $e');
+      setState(() {
+        _errorMsg = 'Error initializing app: $e';
+        _showError = true;
+      });
+
+      // Still try to navigate after showing error
+      Future.delayed(const Duration(seconds: 3), () {
+        _handleNavigation();
+      });
+    }
+  }
+
+  Future<void> _initializeVideo() async {
     try {
       _controller = VideoPlayerController.asset(
         'assets/images/splashscreen.mp4',
@@ -33,9 +60,11 @@ class _SplashScreenState extends State<SplashScreen> {
       await _controller.initialize();
       print('Video initialized successfully');
 
-      setState(() {
-        _isInitialized = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
 
       _controller.setLooping(false);
       await _controller.play();
@@ -55,7 +84,9 @@ class _SplashScreenState extends State<SplashScreen> {
       });
     } catch (e) {
       print('Error initializing video: $e');
+      // Continue with navigation even if video fails
       _handleNavigation();
+      rethrow;
     }
   }
 
@@ -122,7 +153,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (_controller != null) {
+      _controller.dispose();
+    }
     super.dispose();
   }
 
@@ -152,16 +185,19 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
 
-          // Loading indicator at bottom
-          if (!_isInitialized || !_controller.value.isPlaying)
+          // Error message if needed
+          if (_showError)
             Positioned(
-              bottom: 20,
+              bottom: 60,
               left: 0,
               right: 0,
-              child: Center(
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                color: Colors.red.withOpacity(0.8),
                 child: Text(
-                  'LOADING...',
-                  style: AppTheme.headingStyle.copyWith(fontSize: 18),
+                  _errorMsg,
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),

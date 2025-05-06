@@ -56,17 +56,28 @@ class AppTheme {
 }
 
 void main() async {
+  // This ensures Flutter is initialized correctly before we do anything else
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  SystemChrome.setPreferredOrientations([
+  // Set orientation to landscape
+  await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  
+  // Hide system UI
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
+  // Initialize Firebase with error handling
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('Firebase initialized successfully');
+  } catch (e) {
+    print('Error initializing Firebase: $e');
+    // Continue with app startup even if Firebase fails
+  }
 
   runApp(const MyApp());
 }
