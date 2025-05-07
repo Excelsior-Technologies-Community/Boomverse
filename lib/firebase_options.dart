@@ -41,53 +41,56 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyD5HJnh8lSKVG-C0uI4_nmdTz9yAxhH4NQ',
-    appId: '1:380802237826:web:011ff5ab65903f962abb9b',
-    messagingSenderId: '380802237826',
-    projectId: 'bomberman-f2f4c',
-    authDomain: 'bomberman-f2f4c.firebaseapp.com',
-    databaseURL: 'https://bomberman-f2f4c-default-rtdb.firebaseio.com',
-    storageBucket: 'bomberman-f2f4c.firebasestorage.app',
-    measurementId: 'G-4RJH112G9L',
+    apiKey: 'AIzaSyD-FGTetnSwIlV0wORLUHN-MV9pLjDdpPs',
+    appId: '1:429222388918:web:0673a013221af4283d3217',
+    messagingSenderId: '429222388918',
+    projectId: 'blaster-man-91d59',
+    authDomain: 'blaster-man-91d59.firebaseapp.com',
+    databaseURL: 'https://blaster-man-91d59-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'blaster-man-91d59.firebasestorage.app',
+    measurementId: 'G-S79FE0H1MK',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBOKj0oak7PEtpDRE2JqboKD5gzukuLm1I',
-    appId: '1:380802237826:android:4ff54e33bc7783762abb9b',
-    messagingSenderId: '380802237826',
-    projectId: 'bomberman-f2f4c',
-    databaseURL: 'https://bomberman-f2f4c-default-rtdb.firebaseio.com',
-    storageBucket: 'bomberman-f2f4c.firebasestorage.app',
+    apiKey: 'AIzaSyCUpdHSGFvO6ICfQzyYsYP0YUdX3yA2FBA',
+    appId: '1:429222388918:android:e524677a97f8f5d13d3217',
+    messagingSenderId: '429222388918',
+    projectId: 'blaster-man-91d59',
+    databaseURL: 'https://blaster-man-91d59-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'blaster-man-91d59.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCtxXX_ypVkoWDIVN_A7my6t7UbJ-ejkms',
-    appId: '1:380802237826:ios:b1306841b16cb97e2abb9b',
-    messagingSenderId: '380802237826',
-    projectId: 'bomberman-f2f4c',
-    databaseURL: 'https://bomberman-f2f4c-default-rtdb.firebaseio.com',
-    storageBucket: 'bomberman-f2f4c.firebasestorage.app',
-    iosBundleId: 'com.example.blastermanGame',
+    apiKey: 'AIzaSyDxV_Fwc6rOMHAi2frlF5TiYQKr7FmmSvQ',
+    appId: '1:429222388918:ios:88cad27b00f50c773d3217',
+    messagingSenderId: '429222388918',
+    projectId: 'blaster-man-91d59',
+    databaseURL: 'https://blaster-man-91d59-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'blaster-man-91d59.firebasestorage.app',
+    iosClientId: '429222388918-8mlat8eesp1hf04a9cltamiae126hd2b.apps.googleusercontent.com',
+    iosBundleId: 'com.example.blasterman',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCtxXX_ypVkoWDIVN_A7my6t7UbJ-ejkms',
-    appId: '1:380802237826:ios:b1306841b16cb97e2abb9b',
-    messagingSenderId: '380802237826',
-    projectId: 'bomberman-f2f4c',
-    databaseURL: 'https://bomberman-f2f4c-default-rtdb.firebaseio.com',
-    storageBucket: 'bomberman-f2f4c.firebasestorage.app',
-    iosBundleId: 'com.example.blastermanGame',
+    apiKey: 'AIzaSyDxV_Fwc6rOMHAi2frlF5TiYQKr7FmmSvQ',
+    appId: '1:429222388918:ios:88cad27b00f50c773d3217',
+    messagingSenderId: '429222388918',
+    projectId: 'blaster-man-91d59',
+    databaseURL: 'https://blaster-man-91d59-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'blaster-man-91d59.firebasestorage.app',
+    iosClientId: '429222388918-8mlat8eesp1hf04a9cltamiae126hd2b.apps.googleusercontent.com',
+    iosBundleId: 'com.example.blasterman',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyD5HJnh8lSKVG-C0uI4_nmdTz9yAxhH4NQ',
-    appId: '1:380802237826:web:e702d02b048100fd2abb9b',
-    messagingSenderId: '380802237826',
-    projectId: 'bomberman-f2f4c',
-    authDomain: 'bomberman-f2f4c.firebaseapp.com',
-    databaseURL: 'https://bomberman-f2f4c-default-rtdb.firebaseio.com',
-    storageBucket: 'bomberman-f2f4c.firebasestorage.app',
-    measurementId: 'G-DZ3WF9YJPV',
+    apiKey: 'AIzaSyD-FGTetnSwIlV0wORLUHN-MV9pLjDdpPs',
+    appId: '1:429222388918:web:7fc4470e28f83b573d3217',
+    messagingSenderId: '429222388918',
+    projectId: 'blaster-man-91d59',
+    authDomain: 'blaster-man-91d59.firebaseapp.com',
+    databaseURL: 'https://blaster-man-91d59-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'blaster-man-91d59.firebasestorage.app',
+    measurementId: 'G-NCYRJ06QC8',
   );
+
 }
