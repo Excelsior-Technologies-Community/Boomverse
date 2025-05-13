@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
 import 'dart:math' show Random;
+import 'services/device_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/audio_service.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -13,10 +15,19 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final LeaderboardService _leaderboardService = LeaderboardService();
   late AnimationController _shineController;
   final Random _random = Random();
+  final AudioService _audioService = AudioService();
+  late AnimationController _buttonController;
+  late Animation<double> _buttonAnimation;
+  late AnimationController _shimmerController;
+  late Animation<double> _shimmerAnimation;
+  late DatabaseReference _leaderboardDbRef;
+  List<Map<String, dynamic>> _leaderboardData = [];
+  bool _isLoading = true;
+  String? _loadError;
 
   // Trophy colors for top ranks
   final List<Color> trophyColors = [
@@ -39,22 +50,43 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   void initState() {
     super.initState();
 
-    // Animation controller for the shine effect
-    _shineController = AnimationController(
+    // Initialize audio
+    _audioService.init();
+
+    // Initialize button animation controller
+    _buttonController = AnimationController(
+      duration: const Duration(milliseconds: 200),
       vsync: this,
-      duration: const Duration(seconds: 2),
+    );
+    _buttonAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _buttonController, curve: Curves.easeInOut),
+    );
+
+    // Init shimmer controller
+    _shimmerController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+    _shimmerAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(_shimmerController);
+
+    // Initialize shine controller
+    _shineController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
     )..repeat();
 
-    // Randomize particles
-    for (var particle in _particles) {
-      particle['x'] = (_random.nextDouble() * 400);
-      particle['y'] = (_random.nextDouble() * 800);
-    }
+    _leaderboardDbRef = FirebaseDatabase.instance.ref('leaderboard');
+    _fetchLeaderboardData();
   }
 
   @override
   void dispose() {
     _shineController.dispose();
+    _buttonController.dispose();
+    _shimmerController.dispose();
     super.dispose();
   }
 
@@ -293,113 +325,62 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
 
                           // Leaderboard items
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: FutureBuilder<List<Map<String, dynamic>>>(
-                                future:
-                                    _leaderboardService.fetchLeaderboardData(),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return Center(
+                            child:
+                                _isLoading
+                                    ? const Center(
                                       child: CircularProgressIndicator(
-                                        color: Colors.amber,
-                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Color(0xFF7AC74C),
+                                            ),
                                       ),
-                                    );
-                                  } else if (snapshot.hasError) {
-                                    return Container(
-                                      padding: EdgeInsets.all(10),
-                                      margin: EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: Colors.red.withOpacity(0.5),
+                                    )
+                                    : _loadError != null
+                                    ? Center(
+                                      child: Text(
+                                        _loadError!,
+                                        style: TextStyle(
+                                          fontFamily: 'Vip',
+                                          fontSize: 14,
+                                          color: Colors.white,
                                         ),
                                       ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.error_outline,
-                                            color: Colors.red,
-                                            size: 24,
-                                          ),
-                                          SizedBox(height: 6),
-                                          Text(
-                                            'Error: ${snapshot.error}',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontFamily: 'Vip',
-                                              fontSize: 12,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  } else if (!snapshot.hasData ||
-                                      snapshot.data!.isEmpty) {
-                                    return Container(
-                                      padding: EdgeInsets.all(10),
-                                      margin: EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.3),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: Colors.white.withOpacity(0.3),
+                                    )
+                                    : _leaderboardData.isEmpty
+                                    ? Center(
+                                      child: Text(
+                                        'No data available',
+                                        style: TextStyle(
+                                          fontFamily: 'Vip',
+                                          fontSize: 14,
+                                          color: Colors.white,
                                         ),
                                       ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.emoji_events_outlined,
-                                            color: Colors.amber,
-                                            size: 24,
-                                          ),
-                                          SizedBox(height: 6),
-                                          Text(
-                                            'No leaderboard data available\nBe the first to join!',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontFamily: 'Vip',
-                                              fontSize: 12,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ],
+                                    )
+                                    : Padding(
+                                      padding: const EdgeInsets.all(10.0),
+                                      child: ListView.builder(
+                                        itemCount: _leaderboardData.length,
+                                        itemBuilder: (context, index) {
+                                          final item = _leaderboardData[index];
+                                          final isCurrentUser =
+                                              item['isCurrentUser'] == true;
+
+                                          Color? trophyColor;
+                                          if (index < trophyColors.length) {
+                                            trophyColor = trophyColors[index];
+                                          }
+
+                                          return _buildLeaderboardItem(
+                                            item,
+                                            width,
+                                            isCurrentUser,
+                                            trophyColor,
+                                            index,
+                                          );
+                                        },
                                       ),
-                                    );
-                                  }
-
-                                  final leaderboard = snapshot.data!;
-                                  final currentUserId =
-                                      FirebaseAuth.instance.currentUser?.uid;
-
-                                  return ListView.builder(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 10,
                                     ),
-                                    itemCount: leaderboard.length,
-                                    itemBuilder: (context, index) {
-                                      final item = leaderboard[index];
-                                      final isCurrentUser =
-                                          item['userId'] == currentUserId;
-                                      final isTopRank = index < 3;
-                                      return _buildLeaderboardItem(
-                                        item,
-                                        width,
-                                        isCurrentUser,
-                                        isTopRank ? trophyColors[index] : null,
-                                        index,
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
                           ),
 
                           SizedBox(height: 8),
@@ -682,52 +663,150 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       );
     }).toList();
   }
+
+  Future<void> _fetchLeaderboardData() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      print('Fetching leaderboard data...');
+      final DatabaseEvent event = await _leaderboardDbRef.once();
+      final DataSnapshot snapshot = event.snapshot;
+
+      if (snapshot.exists && snapshot.value != null) {
+        print('Leaderboard data exists, processing...');
+
+        final Map<dynamic, dynamic> data =
+            snapshot.value as Map<dynamic, dynamic>;
+        List<Map<String, dynamic>> leaderboardEntries = [];
+
+        // Process each entry and add to list
+        data.forEach((key, value) {
+          if (value is Map<dynamic, dynamic>) {
+            final userData = Map<String, dynamic>.from(value);
+
+            // Make sure we have valid coins value
+            int coins = 0;
+            if (userData.containsKey('coins')) {
+              if (userData['coins'] is int) {
+                coins = userData['coins'];
+              } else if (userData['coins'] != null) {
+                coins = int.tryParse(userData['coins'].toString()) ?? 0;
+              }
+            }
+
+            // Make sure we have a valid name
+            String name = userData['name']?.toString() ?? key.toString();
+            if (name.isEmpty) {
+              name = key.toString();
+            }
+
+            // Add entry with proper score field and username check
+            leaderboardEntries.add({
+              'name': name,
+              'score': coins, // Use score field directly
+              'isCurrentUser': false, // Will be set correctly later if needed
+            });
+          }
+        });
+
+        // Sort by coins (descending)
+        leaderboardEntries.sort(
+          (a, b) => (b['score'] as int).compareTo(a['score'] as int),
+        );
+
+        // Add rank to each entry
+        for (int i = 0; i < leaderboardEntries.length; i++) {
+          leaderboardEntries[i]['rank'] = i + 1;
+        }
+
+        // Get current user's username to mark their entry
+        SharedPreferences.getInstance().then((prefs) {
+          final currentUsername = prefs.getString('username') ?? '';
+          if (currentUsername.isNotEmpty) {
+            for (int i = 0; i < leaderboardEntries.length; i++) {
+              if (leaderboardEntries[i]['name'] == currentUsername) {
+                leaderboardEntries[i]['isCurrentUser'] = true;
+                break;
+              }
+            }
+          }
+        });
+
+        print('Processed ${leaderboardEntries.length} leaderboard entries');
+
+        setState(() {
+          _leaderboardData = leaderboardEntries;
+          _isLoading = false;
+        });
+      } else {
+        print('No leaderboard data found');
+        setState(() {
+          _leaderboardData = [];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error fetching leaderboard data: $e');
+      setState(() {
+        _loadError = 'Failed to load leaderboard data: $e';
+        _isLoading = false;
+      });
+    }
+  }
 }
 
 class LeaderboardService {
   final DatabaseReference _leaderboardRef = FirebaseDatabase.instance.ref(
     'leaderboard',
   );
-  final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
+  final DeviceService _deviceService = DeviceService();
 
   Future<List<Map<String, dynamic>>> fetchLeaderboardData() async {
     try {
-      // Fetch all users from the users node
-      final DatabaseEvent usersEvent = await _usersRef.once();
-      final DataSnapshot usersSnapshot = usersEvent.snapshot;
+      // Fetch all entries from the leaderboard node
+      final DatabaseEvent leaderboardEvent = await _leaderboardRef.once();
+      final DataSnapshot leaderboardSnapshot = leaderboardEvent.snapshot;
 
-      if (!usersSnapshot.exists) {
+      if (!leaderboardSnapshot.exists) {
         return [];
       }
 
-      final usersData = usersSnapshot.value as Map<dynamic, dynamic>;
+      final leaderboardData =
+          leaderboardSnapshot.value as Map<dynamic, dynamic>;
       List<Map<String, dynamic>> leaderboard = [];
 
-      // Iterate through all users
-      for (var userEntry in usersData.entries) {
-        final userId = userEntry.key.toString();
-        final userData = Map<String, dynamic>.from(userEntry.value as Map);
+      // Get current user's username
+      final prefs = await SharedPreferences.getInstance();
+      final currentUsername = prefs.getString('username') ?? '';
 
-        // Skip users without coins or with zero coins
+      // Make sure device service is initialized
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+
+      // Iterate through all leaderboard entries
+      for (var entry in leaderboardData.entries) {
+        final username = entry.key.toString();
+        final data = Map<String, dynamic>.from(entry.value as Map);
+
+        // Skip entries without coins or with zero coins
         final coins =
-            userData['coins'] is int
-                ? userData['coins']
-                : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
+            data['coins'] is int
+                ? data['coins']
+                : int.tryParse(data['coins']?.toString() ?? '0') ?? 0;
         if (coins <= 0) continue;
 
-        // Get username from users node
-        final name = userData['username']?.toString() ?? 'Unknown';
-
-        // Update leaderboard node to ensure it has the latest data
-        await _leaderboardRef.child(userId).update({
-          'coins': coins,
-          'name': name,
-        });
+        // Get name from leaderboard data
+        final name = data['name']?.toString() ?? username;
 
         leaderboard.add({
           'name': name,
           'score': coins, // Map 'coins' to 'score' for compatibility
-          'userId': userId,
+          'userId': username,
+          'isCurrentUser': username == currentUsername,
         });
       }
 
@@ -744,15 +823,11 @@ class LeaderboardService {
     }
   }
 
-  Future<void> updateUserScore(
-    String userId,
-    int newScore, {
-    required String name,
-  }) async {
+  Future<void> updateUserScore(String username, int newScore) async {
     try {
       final updateData = {'coins': newScore};
-      await _leaderboardRef.child(userId).update(updateData);
-      print('Score updated for $userId: $newScore');
+      await _leaderboardRef.child(username).update(updateData);
+      print('Score updated for $username: $newScore');
     } catch (e) {
       print('Error updating user score: $e');
       throw Exception('Failed to update user score');

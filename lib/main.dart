@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'SplashScreen.dart';
+import 'services/device_service.dart';
 
 // Define app-wide theme constants
 class AppTheme {
@@ -77,6 +78,16 @@ void main() async {
   } catch (e) {
     print('Error initializing Firebase: $e');
     // Continue with app startup even if Firebase fails
+  }
+  
+  // Initialize device service
+  try {
+    final deviceService = DeviceService();
+    await deviceService.initDeviceId();
+    print('Device ID initialized: ${deviceService.deviceId}');
+  } catch (e) {
+    print('Error initializing device ID: $e');
+    // Continue with app startup even if device ID initialization fails
   }
 
   runApp(const MyApp());

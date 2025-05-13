@@ -15,16 +15,16 @@ class AudioService {
   final AudioPlayer _sfxPlayer = AudioPlayer();
   
   // Audio paths - updated to match actual file names in assets
-  static const String bgMusic = 'audio/boomberman bg music.mp3';
-  static const String gameMusic = 'audio/game play music.mp3';
-  static const String explosionSound = 'audio/explosion.wav';
-  static const String coinSound = 'audio/game win (2).mp3'; // Temporary using win sound for coin
-  static const String walkSound = 'audio/walk sound.mp3';
-  static const String bombPlantSound = 'audio/explosion.wav'; // Temporarily using explosion for bomb plant
-  static const String gameOverSound = 'audio/game lose.mp3';
-  static const String victorySound = 'audio/game win (2).mp3';
-  static const String buttonClickSound = 'audio/game pause.mp3';
-  static const String deathSound = 'audio/death.mp3';
+  static const String bgMusic = 'assets/audio/boomberman bg music.mp3';
+  static const String gameMusic = 'assets/audio/game play music.mp3';
+  static const String explosionSound = 'assets/audio/explosion.wav';
+  static const String coinSound = 'assets/audio/game win (2).mp3'; // Temporary using win sound for coin
+  static const String walkSound = 'assets/audio/walk sound.mp3';
+  static const String bombPlantSound = 'assets/audio/explosion.wav'; // Temporarily using explosion for bomb plant
+  static const String gameOverSound = 'assets/audio/game lose.mp3';
+  static const String victorySound = 'assets/audio/game win (2).mp3';
+  static const String buttonClickSound = 'assets/audio/game pause.mp3';
+  static const String deathSound = 'assets/audio/death.mp3';
   
   // Settings
   bool _bgmEnabled = true;
