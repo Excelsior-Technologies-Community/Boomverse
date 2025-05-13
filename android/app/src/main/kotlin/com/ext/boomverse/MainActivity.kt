@@ -1,4 +1,4 @@
-package com.example.blasterman
+package com.ext.boomverse
 
 import io.flutter.embedding.android.FlutterActivity
 

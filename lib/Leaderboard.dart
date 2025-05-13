@@ -75,11 +75,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             ),
           ],
         ),
-        child: Image.asset(
-          "assets/images/cancel.png",
-          width: 20,
-          height: 20,
-        ),
+        child: Image.asset("assets/images/cancel.png", width: 20, height: 20),
       ),
     );
   }
@@ -129,10 +125,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   left: 12,
                   child: Row(
                     children: [
-                      Image.asset(
-                        'assets/images/BlasterMan.png',
-                        width: 50,
-                      ),
+                      Image.asset('assets/images/BlasterMan.png', width: 50),
                       SizedBox(width: 6),
                       Text(
                         "RANKINGS",
@@ -140,15 +133,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                           fontFamily: 'Vip',
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          foreground: Paint()
-                            ..shader = ui.Gradient.linear(
-                              const Offset(0, 0),
-                              Offset(0, 16),
-                              [
-                                Color(0xFFFFD9A1),
-                                Color(0xFFEAAF7A)
-                              ],
-                            ),
+                          foreground:
+                              Paint()
+                                ..shader = ui.Gradient.linear(
+                                  const Offset(0, 0),
+                                  Offset(0, 16),
+                                  [Color(0xFFFFD9A1), Color(0xFFEAAF7A)],
+                                ),
                           shadows: [
                             Shadow(
                               color: Colors.black.withOpacity(0.5),
@@ -197,7 +188,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             width: width * 0.5,
                             transform: Matrix4.translationValues(0, -15, 0),
                             padding: const EdgeInsets.symmetric(
-                                vertical: 6, horizontal: 12),
+                              vertical: 6,
+                              horizontal: 12,
+                            ),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
@@ -216,10 +209,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                                   offset: Offset(0, 2),
                                 ),
                               ],
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1,
-                              ),
+                              border: Border.all(color: Colors.white, width: 1),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -262,7 +252,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  vertical: 6, horizontal: 10),
+                                vertical: 6,
+                                horizontal: 10,
+                              ),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
@@ -281,13 +273,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                               child: Row(
                                 children: [
                                   SizedBox(
-                                      width:50,
-                                      child:
-                                          Text('RANK', style: _headerStyle())),
-                                  SizedBox(width:8),
+                                    width: 50,
+                                    child: Text('RANK', style: _headerStyle()),
+                                  ),
+                                  SizedBox(width: 8),
                                   Expanded(
-                                      child: Text('PLAYER',
-                                          style: _headerStyle())),
+                                    child: Text(
+                                      'PLAYER',
+                                      style: _headerStyle(),
+                                    ),
+                                  ),
                                   Text('SCORE', style: _headerStyle()),
                                 ],
                               ),
@@ -298,99 +293,112 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
 
                           // Leaderboard items
                           Expanded(
-                            child: FutureBuilder<List<Map<String, dynamic>>>(
-                              future:
-                                  _leaderboardService.fetchLeaderboardData(),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.amber,
-                                      strokeWidth: 2,
-                                    ),
-                                  );
-                                } else if (snapshot.hasError) {
-                                  return Container(
-                                    padding: EdgeInsets.all(10),
-                                    margin: EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                          color: Colors.red.withOpacity(0.5)),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.error_outline,
-                                            color: Colors.red, size: 24),
-                                        SizedBox(height: 6),
-                                        Text(
-                                          'Error: ${snapshot.error}',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontFamily: 'Vip',
-                                            fontSize: 12,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                } else if (!snapshot.hasData ||
-                                    snapshot.data!.isEmpty) {
-                                  return Container(
-                                    padding: EdgeInsets.all(10),
-                                    margin: EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.3),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                          color: Colors.white.withOpacity(0.3)),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.emoji_events_outlined,
-                                            color: Colors.amber, size: 24),
-                                        SizedBox(height: 6),
-                                        Text(
-                                          'No leaderboard data available\nBe the first to join!',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontFamily: 'Vip',
-                                            fontSize: 12,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-
-                                final leaderboard = snapshot.data!;
-                                final currentUserId =
-                                    FirebaseAuth.instance.currentUser?.uid;
-
-                                return ListView.builder(
-                                  padding: EdgeInsets.symmetric(horizontal: 10),
-                                  itemCount: leaderboard.length,
-                                  itemBuilder: (context, index) {
-                                    final item = leaderboard[index];
-                                    final isCurrentUser =
-                                        item['userId'] == currentUserId;
-                                    final isTopRank = index < 3;
-                                    return _buildLeaderboardItem(
-                                      item,
-                                      width,
-                                      isCurrentUser,
-                                      isTopRank ? trophyColors[index] : null,
-                                      index,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: FutureBuilder<List<Map<String, dynamic>>>(
+                                future:
+                                    _leaderboardService.fetchLeaderboardData(),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return Center(
+                                      child: CircularProgressIndicator(
+                                        color: Colors.amber,
+                                        strokeWidth: 2,
+                                      ),
                                     );
-                                  },
-                                );
-                              },
+                                  } else if (snapshot.hasError) {
+                                    return Container(
+                                      padding: EdgeInsets.all(10),
+                                      margin: EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.red.withOpacity(0.5),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.error_outline,
+                                            color: Colors.red,
+                                            size: 24,
+                                          ),
+                                          SizedBox(height: 6),
+                                          Text(
+                                            'Error: ${snapshot.error}',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontFamily: 'Vip',
+                                              fontSize: 12,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  } else if (!snapshot.hasData ||
+                                      snapshot.data!.isEmpty) {
+                                    return Container(
+                                      padding: EdgeInsets.all(10),
+                                      margin: EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.3),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.3),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.emoji_events_outlined,
+                                            color: Colors.amber,
+                                            size: 24,
+                                          ),
+                                          SizedBox(height: 6),
+                                          Text(
+                                            'No leaderboard data available\nBe the first to join!',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontFamily: 'Vip',
+                                              fontSize: 12,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+
+                                  final leaderboard = snapshot.data!;
+                                  final currentUserId =
+                                      FirebaseAuth.instance.currentUser?.uid;
+
+                                  return ListView.builder(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                    itemCount: leaderboard.length,
+                                    itemBuilder: (context, index) {
+                                      final item = leaderboard[index];
+                                      final isCurrentUser =
+                                          item['userId'] == currentUserId;
+                                      final isTopRank = index < 3;
+                                      return _buildLeaderboardItem(
+                                        item,
+                                        width,
+                                        isCurrentUser,
+                                        isTopRank ? trophyColors[index] : null,
+                                        index,
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
                             ),
                           ),
 
@@ -416,17 +424,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       color: Colors.white,
       letterSpacing: 0.5,
       shadows: [
-        Shadow(
-          color: Colors.black,
-          offset: Offset(1, 1),
-          blurRadius: 1,
-        ),
+        Shadow(color: Colors.black, offset: Offset(1, 1), blurRadius: 1),
       ],
     );
   }
 
-  Widget _buildLeaderboardItem(Map<String, dynamic> item, double width,
-      bool isCurrentUser, Color? trophyColor, int index) {
+  Widget _buildLeaderboardItem(
+    Map<String, dynamic> item,
+    double width,
+    bool isCurrentUser,
+    Color? trophyColor,
+    int index,
+  ) {
     return AnimatedBuilder(
       animation: _shineController,
       builder: (context, child) {
@@ -435,33 +444,35 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         final double shinePosition = _shineController.value * width * 2;
 
         return Container(
-          margin: const EdgeInsets.only(bottom:5),
+          margin: const EdgeInsets.only(bottom: 5),
           padding: EdgeInsets.all(5),
           height: 42,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: isCurrentUser
-                  ? [
-                      Colors.amber.withOpacity(0.3),
-                      Colors.amber.withOpacity(0.1)
-                    ]
-                  : isTop3
+              colors:
+                  isCurrentUser
                       ? [
-                          trophyColor!.withOpacity(0.3),
-                          trophyColor.withOpacity(0.1)
-                        ]
+                        Colors.amber.withOpacity(0.3),
+                        Colors.amber.withOpacity(0.1),
+                      ]
+                      : isTop3
+                      ? [
+                        trophyColor!.withOpacity(0.3),
+                        trophyColor.withOpacity(0.1),
+                      ]
                       : [
-                          Colors.white.withOpacity(0.15),
-                          Colors.white.withOpacity(0.05)
-                        ],
+                        Colors.white.withOpacity(0.15),
+                        Colors.white.withOpacity(0.05),
+                      ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: isCurrentUser
-                  ? Colors.amber
-                  : isTop3
+              color:
+                  isCurrentUser
+                      ? Colors.amber
+                      : isTop3
                       ? trophyColor!.withOpacity(0.8)
                       : Colors.white.withOpacity(0.3),
               width: isCurrentUser || isTop3 ? 1.5 : 1,
@@ -511,31 +522,32 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                     // Rank with trophy for top 3
                     SizedBox(
                       width: 20,
-                      child: isTop3
-                          ? Icon(
-                              Icons.emoji_events,
-                              color: trophyColor,
-                              size: 16,
-                            )
-                          : Text(
-                              '${item['rank']}',
-                              style: TextStyle(
-                                fontFamily: 'Vip',
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white.withOpacity(0.9),
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black,
-                                    offset: Offset(1, 1),
-                                    blurRadius: 1,
-                                  ),
-                                ],
+                      child:
+                          isTop3
+                              ? Icon(
+                                Icons.emoji_events,
+                                color: trophyColor,
+                                size: 16,
+                              )
+                              : Text(
+                                '${item['rank']}',
+                                style: TextStyle(
+                                  fontFamily: 'Vip',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white.withOpacity(0.9),
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black,
+                                      offset: Offset(1, 1),
+                                      blurRadius: 1,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                     ),
 
-                    SizedBox(width:20),
+                    SizedBox(width: 20),
 
                     // Avatar
                     Container(
@@ -544,18 +556,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: LinearGradient(
-                          colors: isCurrentUser ||
-                                  (isTop3 && trophyColor != null)
-                              ? [
-                                  isCurrentUser ? Colors.amber : trophyColor!,
-                                  isCurrentUser
-                                      ? Colors.amber.shade800
-                                      : trophyColor!.withOpacity(0.7),
-                                ]
-                              : [
-                                  Colors.grey.shade700,
-                                  Colors.grey.shade900,
-                                ],
+                          colors:
+                              isCurrentUser || (isTop3 && trophyColor != null)
+                                  ? [
+                                    isCurrentUser ? Colors.amber : trophyColor!,
+                                    isCurrentUser
+                                        ? Colors.amber.shade800
+                                        : trophyColor!.withOpacity(0.7),
+                                  ]
+                                  : [
+                                    Colors.grey.shade700,
+                                    Colors.grey.shade900,
+                                  ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -590,9 +602,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                           fontFamily: 'Vip',
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: isCurrentUser
-                              ? Colors.amber
-                              : isTop3
+                          color:
+                              isCurrentUser
+                                  ? Colors.amber
+                                  : isTop3
                                   ? trophyColor
                                   : Colors.white,
                           shadows: [
@@ -616,9 +629,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             fontFamily: 'Vip',
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: isCurrentUser
-                                ? Colors.amber
-                                : isTop3
+                            color:
+                                isCurrentUser
+                                    ? Colors.amber
+                                    : isTop3
                                     ? trophyColor
                                     : Colors.white,
                             shadows: [
@@ -631,10 +645,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                           ),
                         ),
                         SizedBox(width: 3),
-                        Image.asset(
-                          'assets/images/coin.png',
-                          height: 16,
-                        ),
+                        Image.asset('assets/images/coin.png', height: 16),
                       ],
                     ),
                   ],
@@ -674,8 +685,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
 }
 
 class LeaderboardService {
-  final DatabaseReference _leaderboardRef =
-      FirebaseDatabase.instance.ref('leaderboard');
+  final DatabaseReference _leaderboardRef = FirebaseDatabase.instance.ref(
+    'leaderboard',
+  );
   final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
 
   Future<List<Map<String, dynamic>>> fetchLeaderboardData() async {
@@ -697,9 +709,10 @@ class LeaderboardService {
         final userData = Map<String, dynamic>.from(userEntry.value as Map);
 
         // Skip users without coins or with zero coins
-        final coins = userData['coins'] is int
-            ? userData['coins']
-            : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
+        final coins =
+            userData['coins'] is int
+                ? userData['coins']
+                : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
         if (coins <= 0) continue;
 
         // Get username from users node
@@ -731,12 +744,13 @@ class LeaderboardService {
     }
   }
 
-  Future<void> updateUserScore(String userId, int newScore,
-      {required String name}) async {
+  Future<void> updateUserScore(
+    String userId,
+    int newScore, {
+    required String name,
+  }) async {
     try {
-      final updateData = {
-        'coins': newScore,
-      };
+      final updateData = {'coins': newScore};
       await _leaderboardRef.child(userId).update(updateData);
       print('Score updated for $userId: $newScore');
     } catch (e) {

@@ -9,9 +9,43 @@ plugins {
 }
 
 android {
-    namespace = "com.example.blasterman"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    namespace        = "com.ext.boomverse"
+    compileSdk       = flutter.compileSdkVersion
+    ndkVersion       = "27.0.12077973"
+
+    defaultConfig {
+        applicationId  = "com.ext.boomverse"
+        minSdk         = 23
+        targetSdk      = flutter.targetSdkVersion
+        versionCode    = flutter.versionCode
+        versionName    = flutter.versionName
+    }
+
+    signingConfigs {
+        // your custom release keystore
+        create("release") {
+            storeFile     = file("C:/Users/info/upload-keystore.jks")
+            storePassword = "boomverse@123"
+            keyAlias      = "upload"
+            keyPassword   = "boomverse@123"
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig    = signingConfigs.getByName("release")
+            isMinifyEnabled  = true  // set false if you don’t want R8/ProGuard
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        getByName("debug") {
+            // still uses the default debug keystore so `flutter run --debug` works
+            signingConfig    = signingConfigs.getByName("debug")
+            isMinifyEnabled  = false
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -20,25 +54,6 @@ android {
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
-    defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.blasterman"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
-    }
-
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
-        }
     }
 }
 
