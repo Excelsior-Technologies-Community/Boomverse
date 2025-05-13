@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'LevelSelectionPage.dart';
 import 'main.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'Leaderboard.dart';
-import 'NewLogin.dart';
+import 'SimpleUsername.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/audio_service.dart';
+import 'services/device_service.dart';
 
 class HomePage extends StatefulWidget {
   final String username;
@@ -21,7 +21,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final DeviceService _deviceService = DeviceService();
   final FirebaseDatabase _database = FirebaseDatabase.instance;
 
   int coins = 0;
@@ -32,12 +32,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool isLoading = true;
   late AnimationController _buttonController;
   late Animation<double> _buttonScale;
+  bool _dataMigrated = false;
 
   // Audio service
   final AudioService _audioService = AudioService();
 
   // Stream subscription for real-time updates
-  late StreamSubscription<DatabaseEvent> _userDataSubscription;
+  StreamSubscription<DatabaseEvent>? _userDataSubscription;
 
   @override
   void initState() {
@@ -54,7 +55,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _initAudio();
 
     _initData();
-    _setupRealTimeListener(); // Set up real-time listener
   }
 
   Future<void> _initAudio() async {
@@ -63,45 +63,69 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _initData() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    if (prefs.containsKey('coins')) {
+    setState(() {
+      isLoading = true;
+    });
+    
+    try {
+      // Make sure device ID is initialized
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+      
+      final prefs = await SharedPreferences.getInstance();
+      
+      // First try loading from SharedPreferences for faster initial display
+      if (prefs.containsKey('coins')) {
+        setState(() {
+          coins = prefs.getInt('coins') ?? 0;
+          keys = prefs.getInt('keys') ?? 0;
+          treasures = prefs.getInt('treasures') ?? 0;
+          highestLevel = prefs.getInt('highestLevel') ?? 0;
+        });
+      }
+      
+      // Then load from Firebase for accurate data
+      await _loadPlayerData();
+      
+      // Setup real-time listener for updates
+      _setupRealTimeListener();
+    } catch (e) {
+      print('Error in initData: $e');
       setState(() {
-        coins = prefs.getInt('coins') ?? 0;
-        keys = prefs.getInt('keys') ?? 0;
-        treasures = prefs.getInt('treasures') ?? 0;
-        highestLevel = prefs.getInt('highestLevel') ?? 0;
         isLoading = false;
       });
-    } else {
-      setState(() {
-        isLoading = true;
-      });
     }
-    await _loadPlayerData(); // Initial load
   }
 
-  void _setupRealTimeListener() {
-    final User? currentUser = _auth.currentUser;
-    if (currentUser != null) {
-      final uid = currentUser.uid;
-      final DatabaseReference userRef = _database
-          .ref()
-          .child('users')
-          .child(uid);
+  void _setupRealTimeListener() async {
+    try {
+      // Cancel any existing subscription
+      await _userDataSubscription?.cancel();
+      
+      // Make sure we have a device ID
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+      
+      final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
+      final DatabaseReference userRef = _database.ref().child('users').child(sanitizedDeviceId);
+      
       _userDataSubscription = userRef.onValue.listen(
         (DatabaseEvent event) {
           final DataSnapshot snapshot = event.snapshot;
           if (snapshot.exists) {
             final data = snapshot.value as Map<dynamic, dynamic>;
             final userData = Map<String, dynamic>.from(data);
+            
             setState(() {
               coins = userData['coins'] ?? 0;
               keys = userData['key'] ?? 0;
               treasures = userData['treasure'] ?? 0;
               highestLevel = userData['level'] ?? 0;
-              if (userData.containsKey('levels') &&
-                  userData['levels'] is List) {
+              
+              // Parse levels data (stars for each level)
+              if (userData.containsKey('levels') && userData['levels'] is List) {
                 final levelsList = userData['levels'] as List<dynamic>;
                 levelStars = {};
                 for (int i = 1; i < levelsList.length; i++) {
@@ -109,13 +133,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     levelStars[i.toString()] =
                         levelsList[i] is int
                             ? levelsList[i]
-                            : int.tryParse(levelsList[i]?.toString() ?? '0') ??
-                                0;
+                            : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
                   }
                 }
               }
+              
               isLoading = false;
               _saveToPrefs(); // Save updated data to SharedPreferences
+            });
+            
+            // Also make sure leaderboard entry is up to date
+            _updateLeaderboard();
+          } else {
+            print('No data found for user: $sanitizedDeviceId');
+            setState(() {
+              isLoading = false;
             });
           }
         },
@@ -126,27 +158,41 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           });
         },
       );
+    } catch (e) {
+      print('Error setting up real-time listener: $e');
+      setState(() {
+        isLoading = false;
+      });
     }
   }
 
   Future<void> _loadPlayerData() async {
-    final User? currentUser = _auth.currentUser;
-    if (currentUser != null) {
-      final uid = currentUser.uid;
-      final DatabaseReference userRef = _database
-          .ref()
-          .child('users')
-          .child(uid);
+    try {
+      // Make sure device ID is initialized
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+      
+      final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
+      print('Loading player data for sanitized device ID: $sanitizedDeviceId');
+      
+      final DatabaseReference userRef = _database.ref().child('users').child(sanitizedDeviceId);
+      
       final DatabaseEvent event = await userRef.once();
       final DataSnapshot snapshot = event.snapshot;
+      
       if (snapshot.exists) {
+        print('Found existing user data');
         final data = snapshot.value as Map<dynamic, dynamic>;
         final userData = Map<String, dynamic>.from(data);
+        
         setState(() {
           coins = userData['coins'] ?? 0;
           keys = userData['key'] ?? 0;
           treasures = userData['treasure'] ?? 0;
           highestLevel = userData['level'] ?? 0;
+          
+          // Parse levels data (stars for each level)
           if (userData.containsKey('levels') && userData['levels'] is List) {
             final levelsList = userData['levels'] as List<dynamic>;
             levelStars = {};
@@ -159,14 +205,134 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               }
             }
           }
+          
           isLoading = false;
         });
+        
         await _saveToPrefs();
+        
+        // Check if username needs to be updated
+        if (userData['username'] != widget.username) {
+          await userRef.update({'username': widget.username});
+        }
+        
+        // Also make sure leaderboard entry exists
+        await _updateLeaderboard();
       } else {
+        print('No user data found, creating new profile');
+        
+        // Create new user data with default values
+        await userRef.set({
+          'username': widget.username,
+          'coins': 0,
+          'key': 0,
+          'treasure': 0,
+          'level': 1,
+          'levels': List.filled(100, 0), // Initialize with 0 stars for all levels
+          'platform': _getPlatform(),
+          'streakCount': 0,
+          'lastClaimDate': DateTime.now().subtract(Duration(days: 1)).toIso8601String(), // Allow immediate claim
+        });
+        
+        // Create leaderboard entry
+        await _updateLeaderboard();
+        
         setState(() {
           isLoading = false;
         });
       }
+      
+      // Check if we need to migrate data from the old non-sanitized ID
+      await _checkDataMigration();
+    } catch (e) {
+      print('Error loading player data: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+  
+  Future<void> _checkDataMigration() async {
+    if (_dataMigrated) return; // Only attempt migration once
+    
+    try {
+      // Only attempt migration if we have a different sanitized ID
+      final deviceId = _deviceService.deviceId;
+      final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
+      
+      // If they're the same, no migration needed
+      if (deviceId == sanitizedDeviceId) return;
+      
+      print('Checking for data migration from $deviceId to $sanitizedDeviceId');
+      
+      // Check if there's data under the old non-sanitized ID
+      final oldDataRef = _database.ref().child('users').child(deviceId);
+      final oldDataSnapshot = await oldDataRef.get();
+      
+      if (oldDataSnapshot.exists) {
+        print('Found data under old ID, migrating...');
+        
+        // Copy data to new sanitized path
+        final newDataRef = _database.ref().child('users').child(sanitizedDeviceId);
+        final newDataSnapshot = await newDataRef.get();
+        
+        // Only migrate if new location doesn't already have data
+        if (!newDataSnapshot.exists) {
+          final oldData = oldDataSnapshot.value as Map<dynamic, dynamic>;
+          await newDataRef.set(oldData);
+          
+          print('Data migration complete. Updating leaderboard...');
+          
+          // Update username if changed
+          if (oldData['username'] != widget.username) {
+            await newDataRef.update({'username': widget.username});
+          }
+          
+          // Update leaderboard
+          await _updateLeaderboard();
+          
+          // Reload data
+          await _loadPlayerData();
+        }
+        
+        _dataMigrated = true;
+      }
+    } catch (e) {
+      print('Error during data migration: $e');
+    }
+  }
+  
+  String _getPlatform() {
+    if (Theme.of(context).platform == TargetPlatform.android) {
+      return 'android';
+    } else if (Theme.of(context).platform == TargetPlatform.iOS) {
+      return 'ios';
+    } else if (Theme.of(context).platform == TargetPlatform.windows) {
+      return 'windows';
+    } else if (Theme.of(context).platform == TargetPlatform.macOS) {
+      return 'macos';
+    } else if (Theme.of(context).platform == TargetPlatform.linux) {
+      return 'linux';
+    } else if (Theme.of(context).platform == TargetPlatform.fuchsia) {
+      return 'fuchsia';
+    }
+    return 'unknown';
+  }
+  
+  Future<void> _updateLeaderboard() async {
+    try {
+      // Update leaderboard with username as key
+      final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/${widget.username}');
+      
+      // Update leaderboard with latest coin count
+      await leaderboardRef.set({
+        'coins': coins,
+        'name': widget.username
+      });
+      
+      print('Leaderboard updated for ${widget.username} with $coins coins');
+    } catch (e) {
+      print('Error updating leaderboard: $e');
     }
   }
 
@@ -176,12 +342,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await prefs.setInt('keys', keys);
     await prefs.setInt('treasures', treasures);
     await prefs.setInt('highestLevel', highestLevel);
+    
+    // Store username too for easy access
+    await prefs.setString('username', widget.username);
   }
 
   @override
   void dispose() {
     _buttonController.dispose();
-    _userDataSubscription.cancel(); // Clean up the subscription
+    _userDataSubscription?.cancel(); // Clean up the subscription
     _audioService.stopBGM(); // Stop background music
     super.dispose();
   }
@@ -199,41 +368,42 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         builder: (context, child) {
           return Transform.scale(
             scale: _buttonScale.value,
-            child: Container(
-              width: 100,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                color: const Color(0xFF1A2541),
-                border: Border.all(color: Color(0xFF9DC427), width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF9DC427).withOpacity(0.3),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Vip',
-                  fontSize: 18,
-                  color: Colors.amber,
-                  fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black,
-                      offset: Offset(1, 1),
-                      blurRadius: 2,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: child,
           );
         },
+        child: Container(
+          width: 100,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: const Color(0xFF1A2541),
+            border: Border.all(color: Color(0xFF9DC427), width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF9DC427).withOpacity(0.3),
+                blurRadius: 8,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Vip',
+              fontSize: 18,
+              color: Colors.amber,
+              fontWeight: FontWeight.bold,
+              shadows: [
+                Shadow(
+                  color: Colors.black,
+                  offset: Offset(1, 1),
+                  blurRadius: 2,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -393,28 +563,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           ).then((result) {
                             if (result == true) {
                               // Immediately update coins from the reward result if available
-                              final User? currentUser = _auth.currentUser;
-                              if (currentUser != null) {
-                                final uid = currentUser.uid;
-                                _database
-                                    .ref()
-                                    .child('users')
-                                    .child(uid)
-                                    .once()
-                                    .then((DatabaseEvent event) {
-                                      final DataSnapshot snapshot =
-                                          event.snapshot;
-                                      if (snapshot.exists) {
-                                        final data =
-                                            snapshot.value
-                                                as Map<dynamic, dynamic>;
-                                        setState(() {
-                                          coins = data['coins'] ?? 0;
-                                          _saveToPrefs();
-                                        });
-                                      }
-                                    });
-                              }
+                              _loadPlayerData(); // Reload player data to reflect changes
                             }
                           });
                         }),
@@ -438,7 +587,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         height: 50,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white,
+              Colors.white.withOpacity(0.9),
+            ],
+          ),
           boxShadow: const [
             BoxShadow(
               color: Colors.black26,
@@ -446,8 +602,39 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               offset: Offset(0, 2),
             ),
           ],
+          border: Border.all(
+            color: Colors.red.shade300,
+            width: 1.5,
+          ),
         ),
-        child: Icon(Icons.logout_rounded, color: Colors.red.shade800, size: 24),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Center(
+                child: Icon(
+                  Icons.logout_rounded, 
+                  color: Colors.red.shade700, 
+                  size: 26,
+                ),
+              ),
+            ),
+            // Subtle glow effect around the icon
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.red.withOpacity(0.05),
+                    ],
+                    stops: const [0.7, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -625,21 +812,96 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Your progress is saved to the cloud',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vip',
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildDialogButton('YES', () async {
                       HapticFeedback.mediumImpact();
-                      // Sign out from Firebase
-                      await _auth.signOut();
-                      // Close dialog
-                      Navigator.pop(context);
-                      // Navigate to login screen
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const NewLoginPage()),
+                      
+                      // Show loading indicator
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (BuildContext context) {
+                          return Dialog(
+                            backgroundColor: Colors.transparent,
+                            child: Center(
+                              child: Container(
+                                padding: EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.amber,
+                                      ),
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'Logging out...',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'Vip',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       );
+                      
+                      // Perform actual logout operations
+                      try {
+                        // Cancel any data subscriptions
+                        await _userDataSubscription?.cancel();
+                        
+                        // Clear username from SharedPreferences
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.remove('username');
+                        
+                        // Stop any audio that might be playing
+                        await _audioService.stopBGM();
+                        
+                        // Close all dialogs
+                        Navigator.pop(context); // Close loading dialog
+                        Navigator.pop(context); // Close confirmation dialog
+                        
+                        // Navigate to username screen
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SimpleUsernamePage()),
+                        );
+                      } catch (e) {
+                        print('Error during logout: $e');
+                        // Close loading dialog if there was an error
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                        
+                        // Show error message
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error during logout: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     }),
                     _buildDialogButton('NO', () {
                       HapticFeedback.mediumImpact();
@@ -688,7 +950,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.3),
+                    color: Colors.white.withOpacity(0.3),
                   ),
                   child: const Icon(
                     Icons.rocket_launch,

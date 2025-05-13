@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'game/game_screen.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'services/device_service.dart';
+import 'dart:ui' as ui;
+import 'dart:async';
 
 class LevelSelectionPage extends StatefulWidget {
   const LevelSelectionPage({super.key});
@@ -30,9 +32,9 @@ class _LevelSelectionPageState extends State<LevelSelectionPage>
   int playerTreasures = 0;
   bool isLoading = true;
 
-  // Firebase references
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Firebase and device references
   final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final DeviceService _deviceService = DeviceService();
 
   @override
   void initState() {
@@ -77,59 +79,114 @@ class _LevelSelectionPageState extends State<LevelSelectionPage>
       });
     }
 
-    // Then load from Firebase for the most up-to-date data
-    final User? currentUser = _auth.currentUser;
-    if (currentUser != null) {
-      final uid = currentUser.uid;
+    try {
+      // Make sure device ID is initialized
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+      
+      final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
+      print('Loading level selection data for device ID: $sanitizedDeviceId');
+      
       final DatabaseReference userRef = _database
           .ref()
           .child('users')
-          .child(uid);
+          .child(sanitizedDeviceId);
 
-      try {
-        final DatabaseEvent event = await userRef.once();
-        final DataSnapshot snapshot = event.snapshot;
+      final DatabaseEvent event = await userRef.once();
+      final DataSnapshot snapshot = event.snapshot;
 
-        if (snapshot.exists) {
-          final data = snapshot.value as Map<dynamic, dynamic>;
-          final userData = Map<String, dynamic>.from(data);
+      if (snapshot.exists) {
+        final data = snapshot.value as Map<dynamic, dynamic>;
+        final userData = Map<String, dynamic>.from(data);
 
-          setState(() {
-            highestUnlockedLevel = userData['level'] ?? 1;
-            playerCoins = userData['coins'] ?? 0;
-            playerKeys = userData['key'] ?? 0;
-            playerTreasures = userData['treasure'] ?? 0;
+        setState(() {
+          highestUnlockedLevel = userData['level'] ?? 1;
+          playerCoins = userData['coins'] ?? 0;
+          playerKeys = userData['key'] ?? 0;
+          playerTreasures = userData['treasure'] ?? 0;
 
-            if (userData.containsKey('levels') && userData['levels'] is List) {
-              final levelsList = userData['levels'] as List<dynamic>;
-              levelStars = {};
-              for (int i = 1; i < levelsList.length; i++) {
-                if (levelsList[i] != null) {
-                  levelStars[i.toString()] =
-                      levelsList[i] is int
-                          ? levelsList[i]
-                          : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
-                }
+          if (userData.containsKey('levels') && userData['levels'] is List) {
+            final levelsList = userData['levels'] as List<dynamic>;
+            levelStars = {};
+            for (int i = 1; i < levelsList.length; i++) {
+              if (levelsList[i] != null) {
+                levelStars[i.toString()] =
+                    levelsList[i] is int
+                        ? levelsList[i]
+                        : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
               }
             }
+          }
 
-            isLoading = false;
-          });
+          isLoading = false;
+        });
 
-          // Save the latest data to SharedPreferences
-          await prefs.setInt('highestLevel', highestUnlockedLevel);
-          await prefs.setInt('coins', playerCoins);
-          await prefs.setInt('keys', playerKeys);
-          await prefs.setInt('treasures', playerTreasures);
-        }
-      } catch (e) {
-        print('Error loading player data: $e');
+        // Save the latest data to SharedPreferences
+        await prefs.setInt('highestLevel', highestUnlockedLevel);
+        await prefs.setInt('coins', playerCoins);
+        await prefs.setInt('keys', playerKeys);
+        await prefs.setInt('treasures', playerTreasures);
+        
+        // Debug levels data
+        print('Loaded level stars:');
+        levelStars.forEach((level, stars) {
+          print('Level $level: $stars stars');
+        });
+      } else {
+        // If no data found, create initial user data
+        print('No user data found, initializing with defaults');
+        
+        // Get the username from SharedPreferences
+        final username = prefs.getString('username') ?? 'Player';
+        
+        // Create initial user data
+        await userRef.set({
+          'username': username,
+          'coins': 0,
+          'key': 0,
+          'treasure': 0,
+          'level': 1,
+          'levels': List.filled(100, 0), // Initialize with 0 stars for all levels
+          'streakCount': 0,
+          'lastClaimDate': DateTime.now().subtract(Duration(days: 1)).toIso8601String(),
+          'platform': _getPlatform(),
+        });
+        
+        // Create/update leaderboard entry
+        final leaderboardRef = _database.ref('leaderboard/$username');
+        await leaderboardRef.set({
+          'coins': 0,
+          'name': username
+        });
+        
+        setState(() {
+          isLoading = false;
+        });
       }
+    } catch (e) {
+      print('Error loading player data: $e');
+      setState(() {
+        isLoading = false;
+      });
     }
-
-    setState(() {
-      isLoading = false;
-    });
+  }
+  
+  String _getPlatform() {
+    if (Theme.of(context).platform == TargetPlatform.android) {
+      return 'android';
+    } else if (Theme.of(context).platform == TargetPlatform.iOS) {
+      return 'ios';
+    } else if (Theme.of(context).platform == TargetPlatform.windows) {
+      return 'windows';
+    } else if (Theme.of(context).platform == TargetPlatform.macOS) {
+      return 'macos';
+    } else if (Theme.of(context).platform == TargetPlatform.linux) {
+      return 'linux';
+    } else if (Theme.of(context).platform == TargetPlatform.fuchsia) {
+      return 'fuchsia';
+    }
+    return 'unknown';
   }
 
   @override

@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'game_board.dart';
 import 'constants.dart';
@@ -17,7 +16,9 @@ import '../VictoryPage.dart';
 import '../GameLost.dart';
 import '../Pause.dart';
 import '../services/audio_service.dart';
+import '../services/device_service.dart';
 import 'unified_joystick.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GameScreen extends StatefulWidget {
   final int level;
@@ -56,7 +57,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   double _coinScaleEffect = 1.0;
 
   // Firebase references
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseDatabase _database = FirebaseDatabase.instance;
 
   // New properties
@@ -508,7 +508,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       int stars = _calculateStars();
 
       // Save progress to Firebase
-      _saveGameProgress(stars);
+      await saveGameResult(widget.level, stars, player.coins);
 
       // Navigate to victory page
       Navigator.of(context).pushReplacement(
@@ -557,75 +557,114 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _saveGameProgress(int stars) async {
+  Future<void> saveGameResult(
+      int levelCompleted, int stars, int coinsCollected) async {
+    final deviceService = DeviceService();
+    
+    // Make sure device ID is initialized
+    if (!deviceService.isInitialized) {
+      await deviceService.initDeviceId();
+    }
+    
     try {
-      final User? currentUser = _auth.currentUser;
-      if (currentUser != null) {
-        final uid = currentUser.uid;
-        final userRef = _database.ref().child('users').child(uid);
-        final leaderboardRef = _database.ref().child('leaderboard').child(uid);
-
-        // Get the current user data
-        final snapshot = await userRef.once();
-        if (snapshot.snapshot.exists) {
-          // Get existing user data
-          final userData = snapshot.snapshot.value as Map<dynamic, dynamic>;
-
-          // Update maps to store patches
-          Map<String, dynamic> userUpdates = {};
-          Map<String, dynamic> leaderboardUpdates = {};
-
-          // Add the newly earned coins
-          final currentCoins = userData['coins'] ?? 0;
-          final newCoins = currentCoins + player.coins;
-          userUpdates['coins'] = newCoins;
-
-          // Update leaderboard coins
-          leaderboardUpdates['coins'] = newCoins;
-
-          // Update keys and treasures
-          final currentKeys = userData['key'] ?? 0;
-          final currentTreasures = userData['treasure'] ?? 0;
-          userUpdates['key'] = currentKeys + _collectedKeys;
-          userUpdates['treasure'] = currentTreasures + _collectedTreasures;
-
-          // Handle level progression (only if player won)
-          final currentHighestLevel = userData['level'] ?? 1;
-          if (stars > 0 && widget.level >= currentHighestLevel) {
-            // Only advance to next level if this was a win
-            userUpdates['level'] = widget.level + 1;
-          }
-
-          // Update the stars for this level
-          List<dynamic> levels = [];
-          if (userData.containsKey('levels') && userData['levels'] is List) {
-            levels = List<dynamic>.from(userData['levels']);
-          }
-
-          // Make sure the list has enough elements
-          while (levels.length <= widget.level) {
-            levels.add(0);
-          }
-
-          // Only update if new star count is higher than previous
-          if (stars > (levels[widget.level] ?? 0)) {
-            levels[widget.level] = stars;
-            userUpdates['levels'] = levels;
-          }
-
-          // Apply all updates
-          if (userUpdates.isNotEmpty) {
-            await userRef.update(userUpdates);
-          }
-
-          // Update leaderboard
-          if (leaderboardUpdates.isNotEmpty) {
-            await leaderboardRef.update(leaderboardUpdates);
+      // Get sanitized device ID for Firebase paths
+      final sanitizedDeviceId = deviceService.sanitizedDeviceId;
+      print("Saving game result for device ID: $sanitizedDeviceId, Level: $levelCompleted, Stars: $stars, Coins: $coinsCollected");
+      
+      final userRef = FirebaseDatabase.instance.ref('users/$sanitizedDeviceId');
+      
+      // Get current user data
+      final snapshot = await userRef.get();
+      if (snapshot.exists) {
+        // Update level progression logic
+        final data = snapshot.value as Map<dynamic, dynamic>;
+        final userData = Map<String, dynamic>.from(data);
+        
+        // Get current values
+        final username = userData['username'] as String? ?? 'Player';
+        final currentCoins = userData['coins'] is int 
+            ? userData['coins'] as int 
+            : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
+        final currentLevel = userData['level'] is int 
+            ? userData['level'] as int 
+            : int.tryParse(userData['level']?.toString() ?? '1') ?? 1;
+        final newCoins = currentCoins + coinsCollected;
+        
+        // Get levels array to update stars
+        var levelsArray = List<int>.filled(100, 0);
+        if (userData.containsKey('levels') && userData['levels'] is List) {
+          final dynamicList = userData['levels'] as List<dynamic>;
+          levelsArray = List<int>.filled(100, 0);
+          
+          for (int i = 0; i < dynamicList.length && i < levelsArray.length; i++) {
+            if (dynamicList[i] != null) {
+              levelsArray[i] = dynamicList[i] is int 
+                  ? dynamicList[i] as int 
+                  : int.tryParse(dynamicList[i]?.toString() ?? '0') ?? 0;
+            }
           }
         }
+        
+        // Update the stars for this level if better than previous
+        if (levelCompleted < levelsArray.length) {
+          levelsArray[levelCompleted] = stars > levelsArray[levelCompleted] 
+              ? stars 
+              : levelsArray[levelCompleted];
+        }
+        
+        // Check if next level should be unlocked
+        int newHighestLevel = currentLevel;
+        if (stars > 0 && levelCompleted + 1 > currentLevel) {
+          newHighestLevel = levelCompleted + 1;
+        }
+        
+        // Create update map
+        final updates = {
+          'coins': newCoins,
+          'level': newHighestLevel,
+        };
+        
+        // Create a separate update for the levels array since it needs a different structure
+        await userRef.child('levels').set(levelsArray);
+        
+        // Update user data (without levels field)
+        await userRef.update(updates);
+        print("Updated user data with new coins: $newCoins, level: $newHighestLevel");
+        
+        // Update leaderboard
+        final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+        
+        // Get existing leaderboard data first
+        final leaderboardSnapshot = await leaderboardRef.get();
+        int leaderboardCoins = newCoins;
+        
+        if (leaderboardSnapshot.exists) {
+          final leaderboardData = leaderboardSnapshot.value as Map<dynamic, dynamic>;
+          // Only update if current coins are higher than leaderboard
+          if (leaderboardData.containsKey('coins') && 
+              leaderboardData['coins'] is int && 
+              leaderboardData['coins'] > newCoins) {
+            leaderboardCoins = leaderboardData['coins'];
+          }
+        }
+        
+        await leaderboardRef.set({
+          'coins': leaderboardCoins,
+          'name': username
+        });
+        print("Updated leaderboard for $username with coins: $leaderboardCoins");
+        
+        // Save to SharedPreferences for quick access
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('coins', newCoins);
+        await prefs.setInt('highestLevel', newHighestLevel);
+        
+        print("Game result saved successfully!");
+      } else {
+        print("User data not found, cannot save game result");
       }
     } catch (e) {
-      print('Error saving game progress: $e');
+      print("Error saving game result: $e");
     }
   }
 
@@ -1418,6 +1457,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+
+  // Calculate coins earned based on stars and level
+  int _calculateCoinsEarned(int stars) {
+    // Base reward is 10 coins per star, plus level bonus
+    int baseReward = stars * 10;
+    int levelBonus = widget.level * 5;
+    
+    // Scale up rewards for higher levels
+    if (widget.level > 10) {
+      levelBonus *= 2;
+    }
+    
+    return baseReward + levelBonus;
   }
 }
 

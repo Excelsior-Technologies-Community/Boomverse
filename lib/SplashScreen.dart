@@ -1,10 +1,11 @@
 import 'HomePage.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'NewLogin.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'SimpleUsername.dart';
 import 'main.dart'; // For AppTheme
+import 'services/device_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -19,6 +20,7 @@ class _SplashScreenState extends State<SplashScreen> {
   bool _isInitialized = false;
   String _errorMsg = '';
   bool _showError = false;
+  final DeviceService _deviceService = DeviceService();
 
   @override
   void initState() {
@@ -103,59 +105,52 @@ class _SplashScreenState extends State<SplashScreen> {
     print('Starting user check and navigation');
 
     try {
-      final User? user = FirebaseAuth.instance.currentUser;
-      print('Current user: ${user?.uid ?? 'null'}');
-
-      if (user != null) {
-        try {
-          print('Fetching user data from Firebase');
-          final DatabaseReference userRef = FirebaseDatabase.instance.ref(
-            'users/${user.uid}',
-          );
-          final snapshot = await userRef.get();
-
-          String username = "Player";
-
-          if (snapshot.exists) {
-            final userData = snapshot.value as Map<dynamic, dynamic>?;
-            if (userData != null && userData.containsKey('username')) {
-              username = userData['username'] as String;
-            }
-          }
-
-          print('Navigating to HomePage with username: $username');
+      // Check for existing deviceId and username in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final savedUsername = prefs.getString('username');
+      
+      if (savedUsername != null && savedUsername.isNotEmpty) {
+        // We have a username, initialize deviceId
+        await _deviceService.initDeviceId();
+        final deviceId = _deviceService.deviceId;
+        
+        // Check if user exists in database
+        final userRef = FirebaseDatabase.instance.ref('users/$deviceId');
+        final snapshot = await userRef.get();
+        
+        if (snapshot.exists) {
+          // User exists, navigate to HomePage
+          print('User found with deviceId: $deviceId, navigating to HomePage');
           if (mounted) {
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => HomePage(username: username)),
+              MaterialPageRoute(builder: (_) => HomePage(username: savedUsername)),
             );
+            return;
           }
-        } catch (e) {
-          print('Error fetching user data: $e');
-          _navigateToLogin();
         }
-      } else {
-        _navigateToLogin();
       }
+      
+      // If we got here, either no username or user doesn't exist in database
+      // Navigate to SimpleUsernamePage
+      _navigateToUsernameScreen();
     } catch (e) {
       print('Error in navigation: $e');
-      _navigateToLogin();
+      _navigateToUsernameScreen();
     }
   }
 
-  void _navigateToLogin() {
-    print('Navigating to login page');
+  void _navigateToUsernameScreen() {
+    print('Navigating to username page');
     if (mounted) {
-      Navigator.of(
-        context,
-      ).pushReplacement(MaterialPageRoute(builder: (_) => NewLoginPage()));
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => SimpleUsernamePage()),
+      );
     }
   }
 
   @override
   void dispose() {
-    if (_controller != null) {
-      _controller.dispose();
-    }
+    _controller.dispose();
     super.dispose();
   }
 

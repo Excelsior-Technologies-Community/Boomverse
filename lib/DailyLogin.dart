@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'services/device_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// Helper extension to replace all withValues instances
+extension ColorHelpers on Color {
+  Color withAlpha(int alpha) => withOpacity(alpha / 255);
+}
 
 class DailyLoginScreen extends StatefulWidget {
   const DailyLoginScreen({super.key});
@@ -18,6 +24,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
   String? lastClaimDate;
   late Timer _timer;
   String _remainingTime = "24:00:00";
+  final DeviceService _deviceService = DeviceService();
 
   late AnimationController _frameController;
   late AnimationController _bgParticlesController;
@@ -118,56 +125,52 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
   Future<void> _loadDailyLoginData() async {
     try {
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser != null) {
-        final uid = currentUser.uid;
-        print('Loading data for user ID: $uid');
+      // Initialize device ID if not already done
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+      
+      // Use sanitized device ID for Firebase path
+      final deviceId = _deviceService.sanitizedDeviceId;
+      print('Loading Daily Login data for device ID: $deviceId');
 
-        // Test database connectivity first
-        await _verifyDatabaseConnection();
+      // Test database connectivity first
+      await _verifyDatabaseConnection();
 
-        final DatabaseReference userRef = FirebaseDatabase.instance
-            .ref()
-            .child('users')
-            .child(uid);
-        print('Database reference path: ${userRef.path}');
+      final DatabaseReference userRef = FirebaseDatabase.instance
+          .ref()
+          .child('users')
+          .child(deviceId);
+      print('Database reference path: ${userRef.path}');
 
-        try {
-          final DatabaseEvent event = await userRef.once();
-          final DataSnapshot snapshot = event.snapshot;
+      try {
+        final DatabaseEvent event = await userRef.once();
+        final DataSnapshot snapshot = event.snapshot;
 
-          if (snapshot.exists) {
-            print('User data found in database');
-            final data = snapshot.value as Map<dynamic, dynamic>;
-            final userData = Map<String, dynamic>.from(data);
+        if (snapshot.exists) {
+          print('User data found in database');
+          final data = snapshot.value as Map<dynamic, dynamic>;
+          final userData = Map<String, dynamic>.from(data);
 
-            setState(() {
-              streakCount = userData['streakCount'] ?? 0;
-              lastClaimDate = userData['lastClaimDate'];
-              print('Loaded streak count: $streakCount');
-              print('Loaded last claim date: $lastClaimDate');
-              _updateRemainingTime();
-            });
-          } else {
-            print('No data found for user, initializing as new user');
-            // Initialize for new user
-            setState(() {
-              streakCount = 0;
-              lastClaimDate = null; // Allow immediate claim for new user
-              _updateRemainingTime();
-            });
-          }
-        } catch (e) {
-          print('Error retrieving user data: $e');
-          // Set default values so the UI still works
+          setState(() {
+            streakCount = userData['streakCount'] ?? 0;
+            lastClaimDate = userData['lastClaimDate'];
+            print('Loaded streak count: $streakCount');
+            print('Loaded last claim date: $lastClaimDate');
+            _updateRemainingTime();
+          });
+        } else {
+          print('No data found for user, initializing as new user');
+          // Initialize for new user
           setState(() {
             streakCount = 0;
-            lastClaimDate = null;
+            lastClaimDate = null; // Allow immediate claim for new user
             _updateRemainingTime();
           });
         }
-      } else {
-        print('No user is currently logged in');
+      } catch (e) {
+        print('Error retrieving user data: $e');
+        // Set default values so the UI still works
         setState(() {
           streakCount = 0;
           lastClaimDate = null;
@@ -302,21 +305,25 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       print('Last claim day: $lastClaimDay');
       print('Current streak: $streakCount');
 
+      // Same day - already claimed
       if (lastClaimDay == today) {
         print('Already claimed today');
         return {'canClaim': false, 'day': streakCount};
-      } else if (lastClaimDay.add(Duration(days: 1)) == today) {
-        // Consecutive day (yesterday)
+      } 
+      // Next consecutive day
+      else if (today.difference(lastClaimDay).inDays == 1) {
         print('Consecutive day - continue streak');
         final nextDay = streakCount >= 7 ? 1 : streakCount + 1;
         print('Next day in streak: $nextDay');
         return {'canClaim': true, 'day': nextDay};
-      } else if (lastClaimDay.difference(today).inDays < -1) {
-        // More than one day missed - reset streak
+      } 
+      // More than one day missed - reset streak
+      else if (today.difference(lastClaimDay).inDays > 1) {
         print('Streak broken - reset to day 1');
         return {'canClaim': true, 'day': 1};
-      } else {
-        // Fallback case - should be claimable with streak of 1
+      } 
+      // Fallback case - shouldn't reach here
+      else {
         print('Other case - allow claim with day 1');
         return {'canClaim': true, 'day': 1};
       }
@@ -351,13 +358,15 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     return days;
   }
 
-  Future<void> _claimReward(String uid, int reward, int dayToClaim) async {
+  Future<void> _claimReward(String deviceId, int reward, int dayToClaim) async {
     try {
+      // Use sanitized device ID
+      final sanitizedDeviceId = _deviceService.sanitizeDatabasePath(deviceId);
       final DatabaseReference userRef = FirebaseDatabase.instance
           .ref()
           .child('users')
-          .child(uid);
-      print('Attempting to claim reward for user: $uid');
+          .child(sanitizedDeviceId);
+      print('Attempting to claim reward for device: $sanitizedDeviceId');
       print('Path: ${userRef.path}');
 
       final DatabaseEvent event = await userRef.once();
@@ -370,7 +379,10 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             userData['coins'] is int
                 ? userData['coins']
                 : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
-
+        
+        // Get the username for leaderboard update
+        final username = userData['username'] as String? ?? 'Player';
+        
         print('Current coins: $currentCoins, Adding reward: $reward');
 
         // Update user data with new values
@@ -382,29 +394,75 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
         await userRef.update(updates);
         print('Database updated successfully');
+        
+        // Update leaderboard entry with new coin count
+        final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+        
+        // Try to get existing leaderboard data first
+        final leaderboardSnapshot = await leaderboardRef.get();
+        int leaderboardCoins = currentCoins + reward;
+        
+        if (leaderboardSnapshot.exists) {
+          final leaderboardData = leaderboardSnapshot.value as Map<dynamic, dynamic>;
+          // Only update if current coins are higher than leaderboard
+          if (leaderboardData.containsKey('coins') && 
+              leaderboardData['coins'] is int && 
+              leaderboardData['coins'] > leaderboardCoins) {
+            leaderboardCoins = leaderboardData['coins'];
+          }
+        }
+        
+        await leaderboardRef.update({
+          'coins': leaderboardCoins,
+          'name': username
+        });
+        print('Leaderboard updated with new coin value: $leaderboardCoins');
+
+        // Save to SharedPreferences for quick access
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('coins', currentCoins + reward);
+        await prefs.setInt('streakCount', dayToClaim);
+        await prefs.setString('lastClaimDate', DateTime.now().toIso8601String());
 
         // Verify the update worked
         final DatabaseEvent updatedEvent = await userRef.once();
         final updatedSnapshot = updatedEvent.snapshot;
         if (updatedSnapshot.exists) {
           final updatedData = updatedSnapshot.value as Map<dynamic, dynamic>;
-          print('Updated coins for $uid: ${updatedData['coins']}');
+          print('Updated coins for $deviceId: ${updatedData['coins']}');
         }
       } else {
         print('User does not exist, creating new record');
+        // For new users, we need a username first
+        // Get current username from shared preferences
+        final prefs = await SharedPreferences.getInstance();
+        final username = prefs.getString('username') ?? 'Player';
+        
         await userRef.set({
+          'username': username,
           'coins': reward,
           'streakCount': dayToClaim,
           'lastClaimDate': DateTime.now().toIso8601String(),
-          'email': '',
           'key': 0,
           'level': 1,
-          'levels': [null, 1],
+          'levels': List.filled(100, 0),
           'platform': 'android',
           'treasure': 0,
-          'username': '',
         });
-        print('Initialized user $uid with coins: $reward');
+        
+        // Save to SharedPreferences
+        await prefs.setInt('coins', reward);
+        await prefs.setInt('streakCount', dayToClaim);
+        await prefs.setString('lastClaimDate', DateTime.now().toIso8601String());
+        
+        // Create leaderboard entry
+        final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+        await leaderboardRef.set({
+          'coins': reward,
+          'name': username
+        });
+        
+        print('Initialized user $sanitizedDeviceId with coins: $reward');
       }
 
       setState(() {
@@ -492,8 +550,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.4),
-                      Colors.black.withValues(alpha: 0.6),
+                      Colors.black.withAlpha(192),
+                      Colors.black.withAlpha(224),
                     ],
                   ),
                 ),
@@ -574,18 +632,18 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                             color: Color(0xFF212121),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Color(0xFFFFD9A1).withValues(alpha: 0.8),
+                              color: Color(0xFFFFD9A1).withAlpha(128),
                               width: 1.5,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.6),
+                                color: Colors.black.withAlpha(128),
                                 blurRadius: 15,
                                 spreadRadius: 2,
                                 offset: Offset(0, 8),
                               ),
                               BoxShadow(
-                                color: Colors.amber.withValues(alpha: 0.3),
+                                color: Colors.amber.withAlpha(64),
                                 blurRadius: 25,
                                 spreadRadius: 1,
                                 offset: Offset(0, 0),
@@ -684,9 +742,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                                           isWebPlatform ? 4 * webScale : 2,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.7,
-                                      ),
+                                      color: Colors.black.withAlpha(128),
                                       borderRadius: BorderRadius.only(
                                         bottomLeft: Radius.circular(10),
                                         bottomRight: Radius.circular(10),
@@ -743,7 +799,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.2),
+                                  color: Colors.black.withAlpha(32),
                                   blurRadius: 8,
                                   offset: Offset(0, 3),
                                 ),
@@ -833,28 +889,24 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                     ? [
                       // Add improved animated glow effect if this day was just claimed
                       BoxShadow(
-                        color: Colors.amber.withValues(
-                          alpha: _glowController.value * 0.8,
-                        ),
+                        color: Colors.amber.withAlpha(128),
                         blurRadius: 15.0 * _glowController.value,
                         spreadRadius: 5.0 * _glowController.value,
                       ),
                       BoxShadow(
-                        color: Colors.orange.withValues(
-                          alpha: _glowController.value * 0.4,
-                        ),
+                        color: Colors.orange.withAlpha(64),
                         blurRadius: 20.0 * _glowController.value,
                         spreadRadius: 2.0 * _glowController.value,
                       ),
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
+                        color: Colors.black.withAlpha(32),
                         blurRadius: 2,
                         offset: Offset(0, 1),
                       ),
                     ]
                     : [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
+                        color: Colors.black.withAlpha(32),
                         blurRadius: 2,
                         offset: Offset(0, 1),
                       ),
@@ -1023,9 +1075,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                            color: Colors.amber.withValues(
-                              alpha: 0.3 + 0.4 * _pulseController.value,
-                            ),
+                            color: Colors.amber.withAlpha(64),
                             width: 2,
                           ),
                         ),
@@ -1044,7 +1094,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                       horizontal: isWebPlatform ? 4 : 2,
                       vertical: isWebPlatform ? 2 : 1,
                     ),
-                    color: Colors.black.withValues(alpha: 0.5),
+                    color: Colors.black.withAlpha(128),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
@@ -1084,8 +1134,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                             ),
                             colors: [
                               Colors.transparent,
-                              Colors.white.withValues(alpha: 0.6),
-                              Colors.white.withValues(alpha: 0.6),
+                              Colors.white.withAlpha(128),
+                              Colors.white.withAlpha(128),
                               Colors.transparent,
                             ],
                             stops: [0.0, 0.3, 0.7, 1.0],
@@ -1093,7 +1143,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                         },
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
+                            color: Colors.white.withAlpha(32),
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
@@ -1232,7 +1282,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             BoxShadow(
               color:
                   canClaim
-                      ? Colors.deepOrange.withValues(alpha: 0.4)
+                      ? Colors.deepOrange.withAlpha(64)
                       : Colors.black26,
               blurRadius: 8,
               offset: Offset(0, 3),
@@ -1247,61 +1297,56 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                       final status = getDailyLoginStatus();
                       final dayToClaim = status['day'];
                       final reward = dayToClaim == 7 ? 1000 : dayToClaim * 50;
-                      final User? currentUser =
-                          FirebaseAuth.instance.currentUser;
+                      final deviceId = _deviceService.deviceId;
 
-                      if (currentUser != null) {
-                        final uid = currentUser.uid;
-
-                        // Show loading indicator
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Row(
-                              children: [
-                                SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
+                      // Show loading indicator
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
                                   ),
                                 ),
-                                SizedBox(width: 12),
-                                Text('Claiming reward...'),
-                              ],
-                            ),
-                            duration: Duration(seconds: 1),
-                            backgroundColor: Colors.green.shade700,
+                              ),
+                              SizedBox(width: 12),
+                              Text('Claiming reward...'),
+                            ],
                           ),
-                        );
+                          duration: Duration(seconds: 1),
+                          backgroundColor: Colors.green.shade700,
+                        ),
+                      );
 
-                        // Claim the reward
-                        await _claimReward(uid, reward, dayToClaim);
+                      // Claim the reward
+                      await _claimReward(deviceId, reward, dayToClaim);
 
-                        // Show success message
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.white),
-                                SizedBox(width: 12),
-                                Text('Reward claimed! +$reward coins'),
-                              ],
-                            ),
-                            duration: Duration(seconds: 2),
-                            backgroundColor: Colors.green.shade700,
+                      // Show success message
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.white),
+                              SizedBox(width: 12),
+                              Text('Reward claimed! +$reward coins'),
+                            ],
                           ),
-                        );
+                          duration: Duration(seconds: 2),
+                          backgroundColor: Colors.green.shade700,
+                        ),
+                      );
 
-                        // Wait a moment to show the success message before closing
-                        await Future.delayed(Duration(milliseconds: 800));
-                        Navigator.pop(
-                          context,
-                          true,
-                        ); // Return true to indicate success
-                      }
+                      // Wait a moment to show the success message before closing
+                      await Future.delayed(Duration(milliseconds: 800));
+                      Navigator.pop(
+                        context,
+                        true,
+                      ); // Return true to indicate success
                     } catch (e) {
                       print('Error in claim button: $e');
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1362,7 +1407,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                   letterSpacing: 0.5,
                   shadows: [
                     Shadow(
-                      color: Colors.black.withValues(alpha: 0.5),
+                      color: Colors.black.withAlpha(64),
                       offset: Offset(1, 1),
                       blurRadius: 2,
                     ),
@@ -1378,70 +1423,67 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
   Future<void> _handleDayTap(int day, int reward) async {
     try {
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser != null) {
-        final uid = currentUser.uid;
+      final deviceId = _deviceService.deviceId;
 
-        // Show loading indicator
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
-                SizedBox(width: 12),
-                Text('Claiming day $day reward...'),
-              ],
-            ),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.green.shade700,
+              ),
+              SizedBox(width: 12),
+              Text('Claiming day $day reward...'),
+            ],
           ),
-        );
+          duration: Duration(seconds: 1),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
 
-        // Set the last claimed day
-        setState(() {
-          _lastClaimedDay = day;
-        });
+      // Set the last claimed day
+      setState(() {
+        _lastClaimedDay = day;
+      });
 
-        // Claim the reward
-        await _claimReward(uid, reward, day);
+      // Claim the reward
+      await _claimReward(deviceId, reward, day);
 
-        // Reset animations just to be safe
-        _glowController.reset();
-        _shimmerController.reset();
+      // Reset animations just to be safe
+      _glowController.reset();
+      _shimmerController.reset();
 
-        // Trigger glow animation
-        _glowController.forward(from: 0.0);
+      // Trigger glow animation
+      _glowController.forward(from: 0.0);
 
-        // Trigger shimmer with slight delay
-        Future.delayed(Duration(milliseconds: 100), () {
-          _shimmerController.forward(from: 0.0);
-        });
+      // Trigger shimmer with slight delay
+      Future.delayed(Duration(milliseconds: 100), () {
+        _shimmerController.forward(from: 0.0);
+      });
 
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Day $day reward claimed! +$reward coins'),
-              ],
-            ),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green.shade700,
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Day $day reward claimed! +$reward coins'),
+            ],
           ),
-        );
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
 
-        // Reload data after claiming
-        _loadDailyLoginData();
-      }
+      // Reload data after claiming
+      _loadDailyLoginData();
     } catch (e) {
       print('Error claiming individual reward: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1459,7 +1501,7 @@ class StripedBackgroundPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint =
         Paint()
-          ..color = Colors.amber.withValues(alpha: 0.05)
+          ..color = Colors.amber.withAlpha(5)
           ..style = PaintingStyle.fill;
 
     for (int i = -20; i < 40; i++) {
@@ -1479,7 +1521,7 @@ class StripedBackgroundPainter extends CustomPainter {
     final gradient = RadialGradient(
       center: Alignment.center,
       radius: 0.8,
-      colors: [Colors.amber.withValues(alpha: 0.1), Colors.transparent],
+      colors: [Colors.amber.withAlpha(10), Colors.transparent],
     ).createShader(rect);
 
     final gradientPaint =
@@ -1515,15 +1557,15 @@ class ParticlesPainter extends CustomPainter {
         final colorRoll = random.nextDouble();
         if (colorRoll < 0.5) {
           colors.add(
-            Colors.amber.withValues(alpha: 0.3 + random.nextDouble() * 0.3),
+            Colors.amber.withAlpha(128),
           );
         } else if (colorRoll < 0.8) {
           colors.add(
-            Colors.orange.withValues(alpha: 0.2 + random.nextDouble() * 0.2),
+            Colors.orange.withAlpha(64),
           );
         } else {
           colors.add(
-            Colors.white.withValues(alpha: 0.2 + random.nextDouble() * 0.1),
+            Colors.white.withAlpha(64),
           );
         }
       }
@@ -1587,11 +1629,11 @@ class CoinBurstPainter extends CustomPainter {
 
         final colorChoice = random.nextDouble();
         if (colorChoice < 0.7) {
-          particleColors.add(Colors.amber.withValues(alpha: 0.8));
+          particleColors.add(Colors.amber.withAlpha(128));
         } else if (colorChoice < 0.9) {
-          particleColors.add(Colors.amber.shade200.withValues(alpha: 0.8));
+          particleColors.add(Colors.amber.shade200.withAlpha(128));
         } else {
-          particleColors.add(Colors.white.withValues(alpha: 0.8));
+          particleColors.add(Colors.white.withAlpha(128));
         }
       }
     }
@@ -1614,7 +1656,7 @@ class CoinBurstPainter extends CustomPainter {
 
       final radius =
           particleSizes[i] * (1.0 - progress * 0.5); // Shrink slightly
-      final color = particleColors[i].withValues(alpha: currentOpacity);
+      final color = particleColors[i].withAlpha(128);
 
       canvas.drawCircle(currentOffset, radius, Paint()..color = color);
     }
@@ -1652,8 +1694,8 @@ class SparklesPainter extends CustomPainter {
           'delay': delay,
           'color':
               random.nextDouble() < 0.7
-                  ? Colors.amber.withValues(alpha: 0.8)
-                  : Colors.white.withValues(alpha: 0.8),
+                  ? Colors.amber.withAlpha(128)
+                  : Colors.white.withAlpha(128),
         });
       }
     }
@@ -1686,7 +1728,7 @@ class SparklesPainter extends CustomPainter {
       // Draw sparkle (simple circle)
       final paint =
           Paint()
-            ..color = (sparkle['color'] as Color).withValues(alpha: opacity);
+            ..color = (sparkle['color'] as Color).withAlpha(128);
 
       // Size varies slightly for twinkling effect
       final twinkleEffect =

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
 import 'dart:math' show Random;
+import 'services/device_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/audio_service.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -13,10 +15,19 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final LeaderboardService _leaderboardService = LeaderboardService();
   late AnimationController _shineController;
   final Random _random = Random();
+  final AudioService _audioService = AudioService();
+  late AnimationController _buttonController;
+  late Animation<double> _buttonAnimation;
+  late AnimationController _shimmerController;
+  late Animation<double> _shimmerAnimation;
+  late DatabaseReference _leaderboardDbRef;
+  List<Map<String, dynamic>> _leaderboardData = [];
+  bool _isLoading = true;
+  String? _loadError;
 
   // Trophy colors for top ranks
   final List<Color> trophyColors = [
@@ -39,22 +50,43 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   void initState() {
     super.initState();
 
-    // Animation controller for the shine effect
-    _shineController = AnimationController(
+    // Initialize audio
+    _audioService.init();
+
+    // Initialize button animation controller
+    _buttonController = AnimationController(
+      duration: const Duration(milliseconds: 200),
       vsync: this,
-      duration: const Duration(seconds: 2),
+    );
+    _buttonAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _buttonController, curve: Curves.easeInOut),
+    );
+
+    // Init shimmer controller
+    _shimmerController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+    _shimmerAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(_shimmerController);
+
+    // Initialize shine controller
+    _shineController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
     )..repeat();
 
-    // Randomize particles
-    for (var particle in _particles) {
-      particle['x'] = (_random.nextDouble() * 400);
-      particle['y'] = (_random.nextDouble() * 800);
-    }
+    _leaderboardDbRef = FirebaseDatabase.instance.ref('leaderboard');
+    _fetchLeaderboardData();
   }
 
   @override
   void dispose() {
     _shineController.dispose();
+    _buttonController.dispose();
+    _shimmerController.dispose();
     super.dispose();
   }
 
@@ -75,11 +107,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             ),
           ],
         ),
-        child: Image.asset(
-          "assets/images/cancel.png",
-          width: 20,
-          height: 20,
-        ),
+        child: Image.asset("assets/images/cancel.png", width: 20, height: 20),
       ),
     );
   }
@@ -129,10 +157,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   left: 12,
                   child: Row(
                     children: [
-                      Image.asset(
-                        'assets/images/BlasterMan.png',
-                        width: 50,
-                      ),
+                      Image.asset('assets/images/BlasterMan.png', width: 50),
                       SizedBox(width: 6),
                       Text(
                         "RANKINGS",
@@ -140,15 +165,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                           fontFamily: 'Vip',
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          foreground: Paint()
-                            ..shader = ui.Gradient.linear(
-                              const Offset(0, 0),
-                              Offset(0, 16),
-                              [
-                                Color(0xFFFFD9A1),
-                                Color(0xFFEAAF7A)
-                              ],
-                            ),
+                          foreground:
+                              Paint()
+                                ..shader = ui.Gradient.linear(
+                                  const Offset(0, 0),
+                                  Offset(0, 16),
+                                  [Color(0xFFFFD9A1), Color(0xFFEAAF7A)],
+                                ),
                           shadows: [
                             Shadow(
                               color: Colors.black.withOpacity(0.5),
@@ -197,7 +220,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             width: width * 0.5,
                             transform: Matrix4.translationValues(0, -15, 0),
                             padding: const EdgeInsets.symmetric(
-                                vertical: 6, horizontal: 12),
+                              vertical: 6,
+                              horizontal: 12,
+                            ),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
@@ -216,10 +241,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                                   offset: Offset(0, 2),
                                 ),
                               ],
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1,
-                              ),
+                              border: Border.all(color: Colors.white, width: 1),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -262,7 +284,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  vertical: 6, horizontal: 10),
+                                vertical: 6,
+                                horizontal: 10,
+                              ),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
@@ -281,13 +305,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                               child: Row(
                                 children: [
                                   SizedBox(
-                                      width:50,
-                                      child:
-                                          Text('RANK', style: _headerStyle())),
-                                  SizedBox(width:8),
+                                    width: 50,
+                                    child: Text('RANK', style: _headerStyle()),
+                                  ),
+                                  SizedBox(width: 8),
                                   Expanded(
-                                      child: Text('PLAYER',
-                                          style: _headerStyle())),
+                                    child: Text(
+                                      'PLAYER',
+                                      style: _headerStyle(),
+                                    ),
+                                  ),
                                   Text('SCORE', style: _headerStyle()),
                                 ],
                               ),
@@ -298,100 +325,62 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
 
                           // Leaderboard items
                           Expanded(
-                            child: FutureBuilder<List<Map<String, dynamic>>>(
-                              future:
-                                  _leaderboardService.fetchLeaderboardData(),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.amber,
-                                      strokeWidth: 2,
-                                    ),
-                                  );
-                                } else if (snapshot.hasError) {
-                                  return Container(
-                                    padding: EdgeInsets.all(10),
-                                    margin: EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                          color: Colors.red.withOpacity(0.5)),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.error_outline,
-                                            color: Colors.red, size: 24),
-                                        SizedBox(height: 6),
-                                        Text(
-                                          'Error: ${snapshot.error}',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontFamily: 'Vip',
-                                            fontSize: 12,
-                                            color: Colors.white,
-                                          ),
+                            child:
+                                _isLoading
+                                    ? const Center(
+                                      child: CircularProgressIndicator(
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Color(0xFF7AC74C),
+                                            ),
+                                      ),
+                                    )
+                                    : _loadError != null
+                                    ? Center(
+                                      child: Text(
+                                        _loadError!,
+                                        style: TextStyle(
+                                          fontFamily: 'Vip',
+                                          fontSize: 14,
+                                          color: Colors.white,
                                         ),
-                                      ],
-                                    ),
-                                  );
-                                } else if (!snapshot.hasData ||
-                                    snapshot.data!.isEmpty) {
-                                  return Container(
-                                    padding: EdgeInsets.all(10),
-                                    margin: EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.3),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                          color: Colors.white.withOpacity(0.3)),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.emoji_events_outlined,
-                                            color: Colors.amber, size: 24),
-                                        SizedBox(height: 6),
-                                        Text(
-                                          'No leaderboard data available\nBe the first to join!',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontFamily: 'Vip',
-                                            fontSize: 12,
-                                            color: Colors.white,
-                                          ),
+                                      ),
+                                    )
+                                    : _leaderboardData.isEmpty
+                                    ? Center(
+                                      child: Text(
+                                        'No data available',
+                                        style: TextStyle(
+                                          fontFamily: 'Vip',
+                                          fontSize: 14,
+                                          color: Colors.white,
                                         ),
-                                      ],
+                                      ),
+                                    )
+                                    : Padding(
+                                      padding: const EdgeInsets.all(10.0),
+                                      child: ListView.builder(
+                                        itemCount: _leaderboardData.length,
+                                        itemBuilder: (context, index) {
+                                          final item = _leaderboardData[index];
+                                          final isCurrentUser =
+                                              item['isCurrentUser'] == true;
+
+                                          Color? trophyColor;
+                                          if (index < trophyColors.length) {
+                                            trophyColor = trophyColors[index];
+                                          }
+
+                                          return _buildLeaderboardItem(
+                                            item,
+                                            width,
+                                            isCurrentUser,
+                                            trophyColor,
+                                            index,
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  );
-                                }
-
-                                final leaderboard = snapshot.data!;
-                                final currentUserId =
-                                    FirebaseAuth.instance.currentUser?.uid;
-
-                                return ListView.builder(
-                                  padding: EdgeInsets.symmetric(horizontal: 10),
-                                  itemCount: leaderboard.length,
-                                  itemBuilder: (context, index) {
-                                    final item = leaderboard[index];
-                                    final isCurrentUser =
-                                        item['userId'] == currentUserId;
-                                    final isTopRank = index < 3;
-                                    return _buildLeaderboardItem(
-                                      item,
-                                      width,
-                                      isCurrentUser,
-                                      isTopRank ? trophyColors[index] : null,
-                                      index,
-                                    );
-                                  },
-                                );
-                              },
-                            ),
                           ),
 
                           SizedBox(height: 8),
@@ -416,17 +405,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       color: Colors.white,
       letterSpacing: 0.5,
       shadows: [
-        Shadow(
-          color: Colors.black,
-          offset: Offset(1, 1),
-          blurRadius: 1,
-        ),
+        Shadow(color: Colors.black, offset: Offset(1, 1), blurRadius: 1),
       ],
     );
   }
 
-  Widget _buildLeaderboardItem(Map<String, dynamic> item, double width,
-      bool isCurrentUser, Color? trophyColor, int index) {
+  Widget _buildLeaderboardItem(
+    Map<String, dynamic> item,
+    double width,
+    bool isCurrentUser,
+    Color? trophyColor,
+    int index,
+  ) {
     return AnimatedBuilder(
       animation: _shineController,
       builder: (context, child) {
@@ -435,33 +425,35 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         final double shinePosition = _shineController.value * width * 2;
 
         return Container(
-          margin: const EdgeInsets.only(bottom:5),
+          margin: const EdgeInsets.only(bottom: 5),
           padding: EdgeInsets.all(5),
           height: 42,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: isCurrentUser
-                  ? [
-                      Colors.amber.withOpacity(0.3),
-                      Colors.amber.withOpacity(0.1)
-                    ]
-                  : isTop3
+              colors:
+                  isCurrentUser
                       ? [
-                          trophyColor!.withOpacity(0.3),
-                          trophyColor.withOpacity(0.1)
-                        ]
+                        Colors.amber.withOpacity(0.3),
+                        Colors.amber.withOpacity(0.1),
+                      ]
+                      : isTop3
+                      ? [
+                        trophyColor!.withOpacity(0.3),
+                        trophyColor.withOpacity(0.1),
+                      ]
                       : [
-                          Colors.white.withOpacity(0.15),
-                          Colors.white.withOpacity(0.05)
-                        ],
+                        Colors.white.withOpacity(0.15),
+                        Colors.white.withOpacity(0.05),
+                      ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: isCurrentUser
-                  ? Colors.amber
-                  : isTop3
+              color:
+                  isCurrentUser
+                      ? Colors.amber
+                      : isTop3
                       ? trophyColor!.withOpacity(0.8)
                       : Colors.white.withOpacity(0.3),
               width: isCurrentUser || isTop3 ? 1.5 : 1,
@@ -511,31 +503,32 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                     // Rank with trophy for top 3
                     SizedBox(
                       width: 20,
-                      child: isTop3
-                          ? Icon(
-                              Icons.emoji_events,
-                              color: trophyColor,
-                              size: 16,
-                            )
-                          : Text(
-                              '${item['rank']}',
-                              style: TextStyle(
-                                fontFamily: 'Vip',
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white.withOpacity(0.9),
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black,
-                                    offset: Offset(1, 1),
-                                    blurRadius: 1,
-                                  ),
-                                ],
+                      child:
+                          isTop3
+                              ? Icon(
+                                Icons.emoji_events,
+                                color: trophyColor,
+                                size: 16,
+                              )
+                              : Text(
+                                '${item['rank']}',
+                                style: TextStyle(
+                                  fontFamily: 'Vip',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white.withOpacity(0.9),
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black,
+                                      offset: Offset(1, 1),
+                                      blurRadius: 1,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                     ),
 
-                    SizedBox(width:20),
+                    SizedBox(width: 20),
 
                     // Avatar
                     Container(
@@ -544,18 +537,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: LinearGradient(
-                          colors: isCurrentUser ||
-                                  (isTop3 && trophyColor != null)
-                              ? [
-                                  isCurrentUser ? Colors.amber : trophyColor!,
-                                  isCurrentUser
-                                      ? Colors.amber.shade800
-                                      : trophyColor!.withOpacity(0.7),
-                                ]
-                              : [
-                                  Colors.grey.shade700,
-                                  Colors.grey.shade900,
-                                ],
+                          colors:
+                              isCurrentUser || (isTop3 && trophyColor != null)
+                                  ? [
+                                    isCurrentUser ? Colors.amber : trophyColor!,
+                                    isCurrentUser
+                                        ? Colors.amber.shade800
+                                        : trophyColor!.withOpacity(0.7),
+                                  ]
+                                  : [
+                                    Colors.grey.shade700,
+                                    Colors.grey.shade900,
+                                  ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -590,9 +583,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                           fontFamily: 'Vip',
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: isCurrentUser
-                              ? Colors.amber
-                              : isTop3
+                          color:
+                              isCurrentUser
+                                  ? Colors.amber
+                                  : isTop3
                                   ? trophyColor
                                   : Colors.white,
                           shadows: [
@@ -616,9 +610,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             fontFamily: 'Vip',
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: isCurrentUser
-                                ? Colors.amber
-                                : isTop3
+                            color:
+                                isCurrentUser
+                                    ? Colors.amber
+                                    : isTop3
                                     ? trophyColor
                                     : Colors.white,
                             shadows: [
@@ -631,10 +626,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                           ),
                         ),
                         SizedBox(width: 3),
-                        Image.asset(
-                          'assets/images/coin.png',
-                          height: 16,
-                        ),
+                        Image.asset('assets/images/coin.png', height: 16),
                       ],
                     ),
                   ],
@@ -671,50 +663,150 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       );
     }).toList();
   }
+
+  Future<void> _fetchLeaderboardData() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      print('Fetching leaderboard data...');
+      final DatabaseEvent event = await _leaderboardDbRef.once();
+      final DataSnapshot snapshot = event.snapshot;
+
+      if (snapshot.exists && snapshot.value != null) {
+        print('Leaderboard data exists, processing...');
+
+        final Map<dynamic, dynamic> data =
+            snapshot.value as Map<dynamic, dynamic>;
+        List<Map<String, dynamic>> leaderboardEntries = [];
+
+        // Process each entry and add to list
+        data.forEach((key, value) {
+          if (value is Map<dynamic, dynamic>) {
+            final userData = Map<String, dynamic>.from(value);
+
+            // Make sure we have valid coins value
+            int coins = 0;
+            if (userData.containsKey('coins')) {
+              if (userData['coins'] is int) {
+                coins = userData['coins'];
+              } else if (userData['coins'] != null) {
+                coins = int.tryParse(userData['coins'].toString()) ?? 0;
+              }
+            }
+
+            // Make sure we have a valid name
+            String name = userData['name']?.toString() ?? key.toString();
+            if (name.isEmpty) {
+              name = key.toString();
+            }
+
+            // Add entry with proper score field and username check
+            leaderboardEntries.add({
+              'name': name,
+              'score': coins, // Use score field directly
+              'isCurrentUser': false, // Will be set correctly later if needed
+            });
+          }
+        });
+
+        // Sort by coins (descending)
+        leaderboardEntries.sort(
+          (a, b) => (b['score'] as int).compareTo(a['score'] as int),
+        );
+
+        // Add rank to each entry
+        for (int i = 0; i < leaderboardEntries.length; i++) {
+          leaderboardEntries[i]['rank'] = i + 1;
+        }
+
+        // Get current user's username to mark their entry
+        SharedPreferences.getInstance().then((prefs) {
+          final currentUsername = prefs.getString('username') ?? '';
+          if (currentUsername.isNotEmpty) {
+            for (int i = 0; i < leaderboardEntries.length; i++) {
+              if (leaderboardEntries[i]['name'] == currentUsername) {
+                leaderboardEntries[i]['isCurrentUser'] = true;
+                break;
+              }
+            }
+          }
+        });
+
+        print('Processed ${leaderboardEntries.length} leaderboard entries');
+
+        setState(() {
+          _leaderboardData = leaderboardEntries;
+          _isLoading = false;
+        });
+      } else {
+        print('No leaderboard data found');
+        setState(() {
+          _leaderboardData = [];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error fetching leaderboard data: $e');
+      setState(() {
+        _loadError = 'Failed to load leaderboard data: $e';
+        _isLoading = false;
+      });
+    }
+  }
 }
 
 class LeaderboardService {
-  final DatabaseReference _leaderboardRef =
-      FirebaseDatabase.instance.ref('leaderboard');
-  final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
+  final DatabaseReference _leaderboardRef = FirebaseDatabase.instance.ref(
+    'leaderboard',
+  );
+  final DeviceService _deviceService = DeviceService();
 
   Future<List<Map<String, dynamic>>> fetchLeaderboardData() async {
     try {
-      // Fetch all users from the users node
-      final DatabaseEvent usersEvent = await _usersRef.once();
-      final DataSnapshot usersSnapshot = usersEvent.snapshot;
+      // Fetch all entries from the leaderboard node
+      final DatabaseEvent leaderboardEvent = await _leaderboardRef.once();
+      final DataSnapshot leaderboardSnapshot = leaderboardEvent.snapshot;
 
-      if (!usersSnapshot.exists) {
+      if (!leaderboardSnapshot.exists) {
         return [];
       }
 
-      final usersData = usersSnapshot.value as Map<dynamic, dynamic>;
+      final leaderboardData =
+          leaderboardSnapshot.value as Map<dynamic, dynamic>;
       List<Map<String, dynamic>> leaderboard = [];
 
-      // Iterate through all users
-      for (var userEntry in usersData.entries) {
-        final userId = userEntry.key.toString();
-        final userData = Map<String, dynamic>.from(userEntry.value as Map);
+      // Get current user's username
+      final prefs = await SharedPreferences.getInstance();
+      final currentUsername = prefs.getString('username') ?? '';
 
-        // Skip users without coins or with zero coins
-        final coins = userData['coins'] is int
-            ? userData['coins']
-            : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
+      // Make sure device service is initialized
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+
+      // Iterate through all leaderboard entries
+      for (var entry in leaderboardData.entries) {
+        final username = entry.key.toString();
+        final data = Map<String, dynamic>.from(entry.value as Map);
+
+        // Skip entries without coins or with zero coins
+        final coins =
+            data['coins'] is int
+                ? data['coins']
+                : int.tryParse(data['coins']?.toString() ?? '0') ?? 0;
         if (coins <= 0) continue;
 
-        // Get username from users node
-        final name = userData['username']?.toString() ?? 'Unknown';
-
-        // Update leaderboard node to ensure it has the latest data
-        await _leaderboardRef.child(userId).update({
-          'coins': coins,
-          'name': name,
-        });
+        // Get name from leaderboard data
+        final name = data['name']?.toString() ?? username;
 
         leaderboard.add({
           'name': name,
           'score': coins, // Map 'coins' to 'score' for compatibility
-          'userId': userId,
+          'userId': username,
+          'isCurrentUser': username == currentUsername,
         });
       }
 
@@ -731,14 +823,11 @@ class LeaderboardService {
     }
   }
 
-  Future<void> updateUserScore(String userId, int newScore,
-      {required String name}) async {
+  Future<void> updateUserScore(String username, int newScore) async {
     try {
-      final updateData = {
-        'coins': newScore,
-      };
-      await _leaderboardRef.child(userId).update(updateData);
-      print('Score updated for $userId: $newScore');
+      final updateData = {'coins': newScore};
+      await _leaderboardRef.child(username).update(updateData);
+      print('Score updated for $username: $newScore');
     } catch (e) {
       print('Error updating user score: $e');
       throw Exception('Failed to update user score');
