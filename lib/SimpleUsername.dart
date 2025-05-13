@@ -219,6 +219,25 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
       
       print('Using device ID: $deviceId (sanitized: $sanitizedDeviceId)');
       
+      // Check if username already exists and is linked to a different device
+      final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+      final leaderboardSnapshot = await leaderboardRef.get();
+      
+      if (leaderboardSnapshot.exists) {
+        // Get the associated device ID for this username
+        final userData = leaderboardSnapshot.value as Map<dynamic, dynamic>;
+        final String? associatedDeviceId = userData['deviceId']?.toString();
+        
+        // If we have an associated device ID and it doesn't match current device
+        if (associatedDeviceId != null && associatedDeviceId != sanitizedDeviceId) {
+          setState(() {
+            _isSubmitting = false;
+            _errorMessage = "This username is already taken. Please try another.";
+          });
+          return;
+        }
+      }
+      
       // Store username in shared preferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('username', username);
@@ -280,13 +299,14 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
         
         final coins = userData['coins'] ?? 0;
         
-        // Update leaderboard entry with username as key
+        // Update leaderboard entry with username as key and add device ID for security
         final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
         print('Updating leaderboard for $username');
         
         await leaderboardRef.set({
           'coins': coins,
-          'name': username
+          'name': username,
+          'deviceId': sanitizedDeviceId // Store device ID in leaderboard entry
         });
         
         print('Username saved successfully!');

@@ -327,7 +327,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       // Update leaderboard with latest coin count
       await leaderboardRef.set({
         'coins': coins,
-        'name': widget.username
+        'name': widget.username,
+        'deviceId': _deviceService.sanitizedDeviceId
       });
       
       print('Leaderboard updated for ${widget.username} with $coins coins');
@@ -872,9 +873,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         // Cancel any data subscriptions
                         await _userDataSubscription?.cancel();
                         
+                        // Get the current username for leaderboard update
+                        final currentUsername = widget.username;
+                        
                         // Clear username from SharedPreferences
                         final prefs = await SharedPreferences.getInstance();
                         await prefs.remove('username');
+                        
+                        // Remove the device ID association from the leaderboard entry
+                        try {
+                          // Get the current username for leaderboard update
+                          final currentUsername = widget.username;
+                          
+                          // Check if this user entry exists and was created by this device
+                          final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$currentUsername');
+                          final snapshot = await leaderboardRef.get();
+                          
+                          if (snapshot.exists) {
+                            final data = snapshot.value as Map<dynamic, dynamic>;
+                            final String? deviceId = data['deviceId']?.toString();
+                            
+                            // Only remove association if this device created it
+                            if (deviceId == _deviceService.sanitizedDeviceId) {
+                              // Remove the deviceId field to allow reuse of the username
+                              await leaderboardRef.child('deviceId').remove();
+                              print('Device ID association removed for username: $currentUsername');
+                            }
+                          }
+                        } catch (e) {
+                          print('Error removing device ID association: $e');
+                          // Continue with logout even if this fails
+                        }
                         
                         // Stop any audio that might be playing
                         await _audioService.stopBGM();

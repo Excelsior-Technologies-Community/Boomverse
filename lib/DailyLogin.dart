@@ -339,15 +339,27 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     final canClaim = status['canClaim'];
     final dayToClaim = status['day'];
     List<Map<String, dynamic>> days = [];
+    
     for (int day = 1; day <= 7; day++) {
       String statusStr;
+      
+      // This current day is unlocked and can be claimed
       if (canClaim && day == dayToClaim) {
         statusStr = 'unlocked';
-      } else if (day <= streakCount) {
+      } 
+      // Days before the current day in the streak are collected
+      else if (day < dayToClaim) {
         statusStr = 'collected';
-      } else {
+      }
+      // If streak was reset (dayToClaim == 1) and this is day 1, it's unlocked
+      else if (dayToClaim == 1 && day == 1 && canClaim) {
+        statusStr = 'unlocked';
+      }
+      // All other days are locked (they're in the future)
+      else {
         statusStr = 'locked';
       }
+      
       days.add({
         'day': day,
         'status': statusStr,
@@ -355,13 +367,20 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         'icon': day == 7 ? 'chest' : 'coin',
       });
     }
+    
+    // Debug
+    print('Current streak: $streakCount, Day to claim: $dayToClaim, Can claim: $canClaim');
+    for (var day in days) {
+      print('Day ${day['day']}: ${day['status']}');
+    }
+    
     return days;
   }
 
   Future<void> _claimReward(String deviceId, int reward, int dayToClaim) async {
     try {
       // Use sanitized device ID
-      final sanitizedDeviceId = _deviceService.sanitizeDatabasePath(deviceId);
+      final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
       final DatabaseReference userRef = FirebaseDatabase.instance
           .ref()
           .child('users')
@@ -384,30 +403,48 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         final username = userData['username'] as String? ?? 'Player';
         
         print('Current coins: $currentCoins, Adding reward: $reward');
+        final int newCoins = currentCoins + reward;
 
         // Update user data with new values
         Map<String, dynamic> updates = {
-          'coins': currentCoins + reward,
+          'coins': newCoins,
           'streakCount': dayToClaim,
           'lastClaimDate': DateTime.now().toIso8601String(),
         };
 
-        await userRef.update(updates);
-        print('Database updated successfully');
+        // Perform the update with retry logic
+        bool updateSuccess = false;
+        int retryCount = 0;
+        const maxRetries = 3;
+        
+        while (!updateSuccess && retryCount < maxRetries) {
+          try {
+            await userRef.update(updates);
+            updateSuccess = true;
+            print('Database updated successfully');
+          } catch (e) {
+            retryCount++;
+            print('Error updating database (attempt $retryCount): $e');
+            if (retryCount >= maxRetries) {
+              throw Exception('Failed to update database after $maxRetries attempts');
+            }
+            await Future.delayed(Duration(milliseconds: 500 * retryCount));
+          }
+        }
         
         // Update leaderboard entry with new coin count
         final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
         
         // Try to get existing leaderboard data first
         final leaderboardSnapshot = await leaderboardRef.get();
-        int leaderboardCoins = currentCoins + reward;
+        int leaderboardCoins = newCoins;
         
         if (leaderboardSnapshot.exists) {
           final leaderboardData = leaderboardSnapshot.value as Map<dynamic, dynamic>;
           // Only update if current coins are higher than leaderboard
           if (leaderboardData.containsKey('coins') && 
               leaderboardData['coins'] is int && 
-              leaderboardData['coins'] > leaderboardCoins) {
+              leaderboardData['coins'] > newCoins) {
             leaderboardCoins = leaderboardData['coins'];
           }
         }
@@ -420,7 +457,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
         // Save to SharedPreferences for quick access
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('coins', currentCoins + reward);
+        await prefs.setInt('coins', newCoins);
         await prefs.setInt('streakCount', dayToClaim);
         await prefs.setString('lastClaimDate', DateTime.now().toIso8601String());
 
@@ -430,6 +467,15 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         if (updatedSnapshot.exists) {
           final updatedData = updatedSnapshot.value as Map<dynamic, dynamic>;
           print('Updated coins for $deviceId: ${updatedData['coins']}');
+          
+          // Confirm that the update was successful
+          int updatedCoins = updatedData['coins'] is int 
+              ? updatedData['coins'] 
+              : int.tryParse(updatedData['coins']?.toString() ?? '0') ?? 0;
+              
+          if (updatedCoins != newCoins) {
+            print('Warning: Updated coins value ($updatedCoins) does not match expected value ($newCoins)');
+          }
         }
       } else {
         print('User does not exist, creating new record');
@@ -438,7 +484,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         final prefs = await SharedPreferences.getInstance();
         final username = prefs.getString('username') ?? 'Player';
         
-        await userRef.set({
+        // Create an initial user record
+        final initialUserData = {
           'username': username,
           'coins': reward,
           'streakCount': dayToClaim,
@@ -448,7 +495,27 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           'levels': List.filled(100, 0),
           'platform': 'android',
           'treasure': 0,
-        });
+        };
+        
+        // Set the data with retry logic
+        bool setSuccess = false;
+        int retryCount = 0;
+        const maxRetries = 3;
+        
+        while (!setSuccess && retryCount < maxRetries) {
+          try {
+            await userRef.set(initialUserData);
+            setSuccess = true;
+            print('New user data created successfully');
+          } catch (e) {
+            retryCount++;
+            print('Error creating user data (attempt $retryCount): $e');
+            if (retryCount >= maxRetries) {
+              throw Exception('Failed to create user data after $maxRetries attempts');
+            }
+            await Future.delayed(Duration(milliseconds: 500 * retryCount));
+          }
+        }
         
         // Save to SharedPreferences
         await prefs.setInt('coins', reward);
@@ -465,6 +532,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         print('Initialized user $sanitizedDeviceId with coins: $reward');
       }
 
+      // Update local state
       setState(() {
         streakCount = dayToClaim;
         lastClaimDate = DateTime.now().toIso8601String();
@@ -486,7 +554,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       });
 
       // Return true to indicate success
-      return Future.value(true);
+      return Future.value();
     } catch (e) {
       print('Error claiming reward: $e');
       // Return false or rethrow to indicate failure
@@ -508,7 +576,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
     final days = getDaysList();
     final status = getDailyLoginStatus();
-    final canClaim = status['canClaim'] ?? false;
+    final canClaim = status['canClaim'];
 
     print('Can claim rewards: $canClaim');
     print('Is web platform: $isWebPlatform');
