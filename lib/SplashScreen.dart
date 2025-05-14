@@ -102,41 +102,51 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkUserAndNavigate() async {
-    print('Starting user check and navigation');
+    print('Starting user check with device ID');
 
     try {
-      // Check for existing deviceId and username in SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final savedUsername = prefs.getString('username');
-      
-      if (savedUsername != null && savedUsername.isNotEmpty) {
-        // We have a username, initialize deviceId
-        await _deviceService.initDeviceId();
-        final deviceId = _deviceService.deviceId;
-        
-        // Check if user exists in database
-        final userRef = FirebaseDatabase.instance.ref('users/$deviceId');
-        final snapshot = await userRef.get();
-        
-        if (snapshot.exists) {
-          // User exists, navigate to HomePage
-          print('User found with deviceId: $deviceId, navigating to HomePage');
+      // Initialize deviceId
+      await _deviceService.initDeviceId();
+      final deviceId = _deviceService.deviceId;
+      final sanitizedDeviceId = _sanitizePathSegment(deviceId); // Use the sanitize function from SimpleUsernamePage if available or re-implement
+
+      print('Checking for user with device ID: $sanitizedDeviceId');
+
+      // Check if user exists in database using device ID
+      final userRef = FirebaseDatabase.instance.ref('users/$sanitizedDeviceId');
+      final snapshot = await userRef.get();
+
+      if (snapshot.exists) {
+        final userData = snapshot.value as Map<dynamic, dynamic>;
+        final username = userData['username'] as String?;
+
+        if (username != null && username.isNotEmpty) {
+          // User exists and has a username, navigate to HomePage
+          print('User found with deviceId: $sanitizedDeviceId and username: $username, navigating to HomePage');
           if (mounted) {
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => HomePage(username: savedUsername)),
+              MaterialPageRoute(builder: (_) => HomePage(username: username)),
             );
             return;
           }
         }
       }
-      
+
       // If we got here, either no username or user doesn't exist in database
-      // Navigate to SimpleUsernamePage
+      print('No user found with device ID or missing username, navigating to SimpleUsernamePage');
       _navigateToUsernameScreen();
     } catch (e) {
-      print('Error in navigation: $e');
+      print('Error during user check: $e');
       _navigateToUsernameScreen();
     }
+  }
+
+  // This function would ideally be in a shared utility or base class
+  // Re-implementing here for demonstration purposes based on SimpleUsername.dart
+  String _sanitizePathSegment(String path) {
+    return path.replaceAll('.', '_')
+        .replaceAll('#', '_')
+        .replaceAll('\$', '_').replaceAll('[', '_').replaceAll(']', '_');
   }
 
   void _navigateToUsernameScreen() {
@@ -164,21 +174,21 @@ class _SplashScreenState extends State<SplashScreen> {
           // Video player
           _isInitialized
               ? FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _controller.value.size.width,
-                  height: _controller.value.size.height,
-                  child: VideoPlayer(_controller),
-                ),
-              )
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller.value.size.width,
+              height: _controller.value.size.height,
+              child: VideoPlayer(_controller),
+            ),
+          )
               : Container(
-                color: AppTheme.backgroundColor,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
+            color: AppTheme.backgroundColor,
+            child: Center(
+              child: CircularProgressIndicator(
+                color: AppTheme.primaryColor,
               ),
+            ),
+          ),
 
           // Error message if needed
           if (_showError)
