@@ -10,7 +10,7 @@ import 'dart:async';
 
 class SimpleUsernamePage extends StatefulWidget {
   const SimpleUsernamePage({super.key});
-  
+
   @override
   _SimpleUsernamePageState createState() => _SimpleUsernamePageState();
 }
@@ -22,44 +22,36 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
   String? _successMessage;
   final DeviceService _deviceService = DeviceService();
   final AudioService _audioService = AudioService();
-  
-  // Animation controllers
+
   late AnimationController _buttonAnimationController;
   late Animation<double> _buttonScaleAnimation;
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Initialize button animation
+
     _buttonAnimationController = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    
+
     _buttonScaleAnimation = Tween<double>(begin: 1.0, end: 0.92).animate(
       CurvedAnimation(parent: _buttonAnimationController, curve: Curves.easeInOut),
     );
-    
-    // Initialize audio
+
     _initAudio();
-    
-    // Make sure device service is initialized
     _initializeDeviceService();
-    
-    // Check for existing username or legacy account
     _checkForExistingUsername();
     _checkForLegacyAccount();
   }
-  
+
   Future<void> _initAudio() async {
     await _audioService.init();
     await _audioService.playBGM();
   }
-  
+
   Future<void> _initializeDeviceService() async {
     try {
-      // Initialize device ID if not already done
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
         print('Device ID initialized: ${_deviceService.deviceId}');
@@ -79,76 +71,63 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
   Future<void> _checkForExistingUsername() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUsername = prefs.getString('username');
-    
+
     if (savedUsername != null && savedUsername.isNotEmpty) {
       _controller.text = savedUsername;
     }
   }
-  
-  // Sanitize database path by removing invalid characters
+
   String _sanitizePathSegment(String path) {
-    // Replace invalid Firebase path characters
     return path.replaceAll('.', '_')
-              .replaceAll('#', '_')
-              .replaceAll('\$', '_')
-              .replaceAll('[', '_')
-              .replaceAll(']', '_');
+        .replaceAll('#', '_')
+        .replaceAll('\$', '_')
+        .replaceAll('[', '_')
+        .replaceAll(']', '_');
   }
-  
+
   Future<void> _checkForLegacyAccount() async {
     try {
-      // Check if user is logged in with Firebase Auth (legacy account)
       final currentUser = FirebaseAuth.instance.currentUser;
-      
+
       if (currentUser != null) {
-        // User has a legacy account, migrate their data
         print('Found legacy account: ${currentUser.uid}');
         setState(() {
           _isSubmitting = true;
         });
-        
-        // Get device ID
+
         await _deviceService.initDeviceId();
         final deviceId = _deviceService.deviceId;
         final sanitizedDeviceId = _sanitizePathSegment(deviceId);
-        
-        // Fetch legacy user data
+
         final legacyUserRef = FirebaseDatabase.instance.ref('users/${currentUser.uid}');
         final snapshot = await legacyUserRef.get();
-        
+
         if (snapshot.exists) {
           final userData = snapshot.value as Map<dynamic, dynamic>;
           final username = userData['username'] as String? ?? 'Player';
-          
-          // Store username in shared preferences
+
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('username', username);
-          
-          // Set controller text to username
+
           setState(() {
             _controller.text = username;
           });
-          
-          // Create new user entry with device ID
+
           final userRef = FirebaseDatabase.instance.ref('users/$sanitizedDeviceId');
-          
-          // Copy all data from legacy user to new device-based user
           await userRef.set(userData);
-          
-          // Update leaderboard entry
+
           final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
           await leaderboardRef.set({
             'coins': userData['coins'] ?? 0,
-            'name': username
+            'name': username,
+            'deviceId': sanitizedDeviceId,
           });
-          
-          // Show success message
+
           setState(() {
             _isSubmitting = false;
             _successMessage = "Account migration completed!";
           });
-          
-          // Wait a moment and navigate to homepage
+
           Timer(Duration(seconds: 2), () {
             Navigator.pushReplacement(
               context,
@@ -170,26 +149,24 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
   }
 
   Future<void> _saveUsername() async {
-    // Play button sound
     _audioService.playButtonClick();
-    
+
     final username = _controller.text.trim();
 
-    // Validate username
     if (username.isEmpty) {
       setState(() {
         _errorMessage = "Please enter a username";
       });
       return;
     }
-    
+
     if (username.length < 3) {
       setState(() {
         _errorMessage = "Username must be at least 3 characters";
       });
       return;
     }
-    
+
     if (username.length > 12) {
       setState(() {
         _errorMessage = "Username must be at most 12 characters";
@@ -197,53 +174,48 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
       return;
     }
 
-    // Clear any previous error and show loading
     setState(() {
       _errorMessage = null;
       _successMessage = null;
       _isSubmitting = true;
     });
 
-    // Provide haptic feedback
     HapticFeedback.mediumImpact();
-    
+
     try {
-      // Make sure device ID is initialized
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
       }
       final deviceId = _deviceService.deviceId;
-      
-      // IMPORTANT: Sanitize device ID for Firebase path
       final sanitizedDeviceId = _sanitizePathSegment(deviceId);
-      
-      print('Using device ID: $deviceId (sanitized: $sanitizedDeviceId)');
-      
-      // Check if username already exists and is linked to a different device
+
+      print('Current device ID: $sanitizedDeviceId');
+
       final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
       final leaderboardSnapshot = await leaderboardRef.get();
-      
+
       if (leaderboardSnapshot.exists) {
-        // Get the associated device ID for this username
         final userData = leaderboardSnapshot.value as Map<dynamic, dynamic>;
         final String? associatedDeviceId = userData['deviceId']?.toString();
-        
-        // If we have an associated device ID and it doesn't match current device
+        print('Associated device ID for $username: $associatedDeviceId');
+
         if (associatedDeviceId != null && associatedDeviceId != sanitizedDeviceId) {
+          print('Device IDs do not match: $associatedDeviceId != $sanitizedDeviceId');
           setState(() {
             _isSubmitting = false;
-            _errorMessage = "This username is already taken. Please try another.";
+            _errorMessage = "This username is already taken by another device. Please try another.";
           });
           return;
         }
+        print('Username $username is available or belongs to this device');
+      } else {
+        print('Username $username is new and available');
       }
-      
-      // Store username in shared preferences
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('username', username);
       print('Username saved to preferences: $username');
-      
-      // Get the platform
+
       String platform = 'unknown';
       if (Theme.of(context).platform == TargetPlatform.android) {
         platform = 'android';
@@ -258,20 +230,15 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
       } else if (Theme.of(context).platform == TargetPlatform.fuchsia) {
         platform = 'fuchsia';
       }
-      
-      // Initialize the current time for daily login
+
       final now = DateTime.now().toIso8601String();
-      
-      // Create user reference with SANITIZED device ID
       final userRef = FirebaseDatabase.instance.ref('users/$sanitizedDeviceId');
       print('User reference path: ${userRef.path}');
-      
+
       try {
-        // Check if user data already exists
         final userSnapshot = await userRef.get();
-        
+
         if (!userSnapshot.exists) {
-          // Create new user data
           print('Creating new user data for $username with device ID $sanitizedDeviceId');
           await userRef.set({
             'username': username,
@@ -285,42 +252,33 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
             'lastClaimDate': now,
           });
         } else {
-          // Update existing user data with new username
           print('Updating existing user data with new username: $username');
           await userRef.update({
             'username': username,
           });
         }
-        
-        // Get user data to retrieve current coins for leaderboard
-        final userData = userSnapshot.exists 
-            ? (userSnapshot.value as Map<dynamic, dynamic>) 
+
+        final userData = userSnapshot.exists
+            ? (userSnapshot.value as Map<dynamic, dynamic>)
             : {'coins': 0};
-        
         final coins = userData['coins'] ?? 0;
-        
-        // Update leaderboard entry with username as key and add device ID for security
-        final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+
         print('Updating leaderboard for $username');
-        
         await leaderboardRef.set({
           'coins': coins,
           'name': username,
-          'deviceId': sanitizedDeviceId // Store device ID in leaderboard entry
+          'deviceId': sanitizedDeviceId,
         });
-        
+
         print('Username saved successfully!');
-        
-        // Show success message briefly
+
         setState(() {
           _isSubmitting = false;
           _successMessage = "Username saved successfully!";
         });
-        
-        // Play success sound
+
         _audioService.playVictory();
-        
-        // Navigate after a brief delay to show success message
+
         Timer(Duration(milliseconds: 800), () {
           if (mounted) {
             Navigator.pushReplacement(
@@ -349,34 +307,28 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-    
-    // Check if we're on a small device
     final bool isSmallDevice = size.height < 600;
-    final bool isWebPlatform = size.width > 650; // Assumed to be web if width is large enough
-    
-    // Calculate responsive sizes for different elements
-    final double logoHeight = isSmallDevice 
-        ? size.height * 0.10 
-        : isWebPlatform 
-            ? size.height * 0.20
-            : size.height * 0.15;
-            
-    final double fontSize = isSmallDevice 
-        ? 16.0 
-        : isWebPlatform 
-            ? 24.0 
-            : 20.0;
-            
-    final double buttonHeight = isSmallDevice 
-        ? 40.0 
-        : isWebPlatform 
-            ? 60.0 
-            : 50.0;
-    
-    final double contentWidth = isWebPlatform 
-        ? size.width * 0.5 
+    final bool isWebPlatform = size.width > 650;
+
+    final double logoHeight = isSmallDevice
+        ? size.height * 0.10
+        : isWebPlatform
+        ? size.height * 0.20
+        : size.height * 0.15;
+    final double fontSize = isSmallDevice
+        ? 16.0
+        : isWebPlatform
+        ? 24.0
+        : 20.0;
+    final double buttonHeight = isSmallDevice
+        ? 40.0
+        : isWebPlatform
+        ? 60.0
+        : 50.0;
+    final double contentWidth = isWebPlatform
+        ? size.width * 0.5
         : size.width * 0.85;
-    
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: Container(
@@ -391,37 +343,30 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
         child: SafeArea(
           child: Stack(
             children: [
-              // Background with semi-transparent overlay
               Positioned.fill(
                 child: Container(
                   color: Colors.black.withOpacity(0.5),
                 ),
               ),
-              
-              // Main content
               Center(
                 child: SingleChildScrollView(
                   padding: EdgeInsets.symmetric(
-                    horizontal: isWebPlatform ? 48 : 16, 
-                    vertical: isSmallDevice ? 10 : 20
+                      horizontal: isWebPlatform ? 48 : 16,
+                      vertical: isSmallDevice ? 10 : 20
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: 600, // Maximum width for better web display
+                      maxWidth: 600,
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Game logo at top
                         if (!isKeyboardVisible)
                           Image.asset(
                             'assets/images/BlasterMan.png',
                             height: logoHeight,
                           ),
-                        
                         SizedBox(height: isSmallDevice ? 10 : 20),
-                        
-                        // Title text
                         if (!isKeyboardVisible || isWebPlatform)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 20),
@@ -448,8 +393,6 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                               ),
                             ),
                           ),
-                        
-                        // Input container
                         Container(
                           width: contentWidth,
                           padding: EdgeInsets.all(isSmallDevice ? 12 : 16),
@@ -487,10 +430,7 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                   ],
                                 ),
                               ),
-                              
                               SizedBox(height: isSmallDevice ? 10 : 16),
-                              
-                              // Username input field
                               Container(
                                 decoration: BoxDecoration(
                                   boxShadow: [
@@ -538,8 +478,8 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                           fontFamily: 'Vip',
                                         ),
                                         contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 20,
-                                          vertical: isSmallDevice ? 8 : 12
+                                            horizontal: 20,
+                                            vertical: isSmallDevice ? 8 : 12
                                         ),
                                       ),
                                       maxLength: 12,
@@ -550,67 +490,61 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                   ),
                                 ),
                               ),
-                              
                               SizedBox(height: isSmallDevice ? 8 : 12),
-                              
-                              // Error or success message
                               AnimatedSwitcher(
                                 duration: Duration(milliseconds: 300),
-                                child: _errorMessage != null 
-                                  ? Container(
-                                      key: ValueKey('error'),
-                                      padding: EdgeInsets.symmetric(
-                                        vertical: isSmallDevice ? 6 : 8,
-                                        horizontal: isSmallDevice ? 8 : 12
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: Colors.red.withOpacity(0.5)),
-                                      ),
-                                      child: Text(
-                                        _errorMessage!,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontFamily: 'Vip',
-                                          fontSize: isSmallDevice ? 12 : 14,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    )
-                                  : _successMessage != null
-                                  ? Container(
-                                      key: ValueKey('success'),
-                                      padding: EdgeInsets.symmetric(
-                                        vertical: isSmallDevice ? 6 : 8,
-                                        horizontal: isSmallDevice ? 8 : 12
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: Colors.green.withOpacity(0.5)),
-                                      ),
-                                      child: Text(
-                                        _successMessage!,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontFamily: 'Vip',
-                                          fontSize: isSmallDevice ? 12 : 14,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    )
-                                  : SizedBox(
-                                      height: isSmallDevice ? 30 : 40, 
-                                      key: ValueKey('empty')
+                                child: _errorMessage != null
+                                    ? Container(
+                                  key: ValueKey('error'),
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: isSmallDevice ? 6 : 8,
+                                      horizontal: isSmallDevice ? 8 : 12
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.red.withOpacity(0.5)),
+                                  ),
+                                  child: Text(
+                                    _errorMessage!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontFamily: 'Vip',
+                                      fontSize: isSmallDevice ? 12 : 14,
+                                      fontWeight: FontWeight.bold,
                                     ),
+                                  ),
+                                )
+                                    : _successMessage != null
+                                    ? Container(
+                                  key: ValueKey('success'),
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: isSmallDevice ? 6 : 8,
+                                      horizontal: isSmallDevice ? 8 : 12
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.green.withOpacity(0.5)),
+                                  ),
+                                  child: Text(
+                                    _successMessage!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontFamily: 'Vip',
+                                      fontSize: isSmallDevice ? 12 : 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                )
+                                    : SizedBox(
+                                    height: isSmallDevice ? 30 : 40,
+                                    key: ValueKey('empty')
+                                ),
                               ),
-                              
                               SizedBox(height: isSmallDevice ? 10 : 16),
-                              
-                              // Play button
                               GestureDetector(
                                 onTap: _isSubmitting ? null : _saveUsername,
                                 onTapDown: (_) => _buttonAnimationController.forward(),
@@ -625,11 +559,11 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                     );
                                   },
                                   child: Container(
-                                    width: isWebPlatform 
-                                        ? 200 
-                                        : isSmallDevice 
-                                            ? 150 
-                                            : 180,
+                                    width: isWebPlatform
+                                        ? 200
+                                        : isSmallDevice
+                                        ? 150
+                                        : 180,
                                     height: buttonHeight,
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
@@ -653,35 +587,35 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                     ),
                                     child: Center(
                                       child: _isSubmitting
-                                        ? SizedBox(
-                                            height: isSmallDevice ? 20 : 24,
-                                            width: isSmallDevice ? 20 : 24,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.5,
-                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ? SizedBox(
+                                        height: isSmallDevice ? 20 : 24,
+                                        width: isSmallDevice ? 20 : 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                          : Text(
+                                        'START GAME',
+                                        style: TextStyle(
+                                          fontFamily: 'Vip',
+                                          fontSize: isSmallDevice
+                                              ? 16
+                                              : isWebPlatform
+                                              ? 22
+                                              : 18,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.0,
+                                          shadows: [
+                                            Shadow(
+                                              color: Colors.black.withOpacity(0.5),
+                                              offset: Offset(1, 1),
+                                              blurRadius: 2,
                                             ),
-                                          )
-                                        : Text(
-                                            'START GAME',
-                                            style: TextStyle(
-                                              fontFamily: 'Vip',
-                                              fontSize: isSmallDevice 
-                                                  ? 16 
-                                                  : isWebPlatform 
-                                                      ? 22 
-                                                      : 18,
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 1.0,
-                                              shadows: [
-                                                Shadow(
-                                                  color: Colors.black.withOpacity(0.5),
-                                                  offset: Offset(1, 1),
-                                                  blurRadius: 2,
-                                                ),
-                                              ],
-                                            ),
-                                          ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -689,13 +623,11 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                             ],
                           ),
                         ),
-                        
-                        // Game features (bottom section)
                         if (!isKeyboardVisible || isWebPlatform)
                           Padding(
                             padding: EdgeInsets.only(
-                              top: isSmallDevice ? 12 : 20,
-                              bottom: isSmallDevice ? 8 : 16
+                                top: isSmallDevice ? 12 : 20,
+                                bottom: isSmallDevice ? 8 : 16
                             ),
                             child: Wrap(
                               spacing: isSmallDevice ? 8 : 16,
@@ -703,22 +635,22 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                               alignment: WrapAlignment.center,
                               children: [
                                 _gameFeatureItem(
-                                  'assets/images/bomb.png', 
+                                  'assets/images/bomb.png',
                                   'PLANT BOMBS',
                                   isSmallDevice: isSmallDevice,
                                 ),
                                 _gameFeatureItem(
-                                  'assets/images/enemy/idle/1.png', 
+                                  'assets/images/enemy/idle/1.png',
                                   'DEFEAT ENEMIES',
                                   isSmallDevice: isSmallDevice,
                                 ),
                                 _gameFeatureItem(
-                                  'assets/images/coin.png', 
+                                  'assets/images/coin.png',
                                   'COLLECT COINS',
                                   isSmallDevice: isSmallDevice,
                                 ),
                                 _gameFeatureItem(
-                                  'assets/images/treasure.png', 
+                                  'assets/images/treasure.png',
                                   'FIND TREASURES',
                                   isSmallDevice: isSmallDevice,
                                 ),
@@ -736,12 +668,12 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
       ),
     );
   }
-  
+
   Widget _gameFeatureItem(String imagePath, String text, {bool isSmallDevice = false}) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isSmallDevice ? 8 : 12,
-        vertical: isSmallDevice ? 6 : 8
+          horizontal: isSmallDevice ? 8 : 12,
+          vertical: isSmallDevice ? 6 : 8
       ),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.6),
@@ -773,4 +705,4 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
       ),
     );
   }
-} 
+}

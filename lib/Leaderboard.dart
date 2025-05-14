@@ -502,7 +502,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   children: [
                     // Rank with trophy for top 3
                     SizedBox(
-                      width: 20,
+                      width: 25,
                       child:
                           isTop3
                               ? Icon(
