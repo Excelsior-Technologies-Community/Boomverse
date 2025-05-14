@@ -1,3 +1,4 @@
+
 {
   "project_info": {
     "project_number": "429222388918",
@@ -14,6 +15,58 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "429222388918-vk72ftur43n8nfkis5t1ajf771opt68h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.blasterman",
+            "certificate_hash": "882dcdc35c5e75cafff278f2e2ef3824d469a6b6"
+          }
+        },
+        {
+          "client_id": "429222388918-002lgqllh5973e841k6kh593v7taktb6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCUpdHSGFvO6ICfQzyYsYP0YUdX3yA2FBA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "429222388918-002lgqllh5973e841k6kh593v7taktb6.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "429222388918-8mlat8eesp1hf04a9cltamiae126hd2b.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.blasterman"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:429222388918:android:c291836776961f2a3d3217",
+        "android_client_info": {
+          "package_name": "com.ext.boomverse"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "429222388918-uloemtavf97dtdhl6fje2p7naffai12m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ext.boomverse",
+            "certificate_hash": "882dcdc35c5e75cafff278f2e2ef3824d469a6b6"
+          }
+        },
         {
           "client_id": "429222388918-002lgqllh5973e841k6kh593v7taktb6.apps.googleusercontent.com",
           "client_type": 3
