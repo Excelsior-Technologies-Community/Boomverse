@@ -66,15 +66,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() {
       isLoading = true;
     });
-    
+
     try {
       // Make sure device ID is initialized
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
       }
-      
+
       final prefs = await SharedPreferences.getInstance();
-      
+
       // First try loading from SharedPreferences for faster initial display
       if (prefs.containsKey('coins')) {
         setState(() {
@@ -84,10 +84,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           highestLevel = prefs.getInt('highestLevel') ?? 0;
         });
       }
-      
+
       // Then load from Firebase for accurate data
       await _loadPlayerData();
-      
+
       // Setup real-time listener for updates
       _setupRealTimeListener();
     } catch (e) {
@@ -102,28 +102,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     try {
       // Cancel any existing subscription
       await _userDataSubscription?.cancel();
-      
+
       // Make sure we have a device ID
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
       }
-      
+
       final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
       final DatabaseReference userRef = _database.ref().child('users').child(sanitizedDeviceId);
-      
+
       _userDataSubscription = userRef.onValue.listen(
-        (DatabaseEvent event) {
+            (DatabaseEvent event) {
           final DataSnapshot snapshot = event.snapshot;
           if (snapshot.exists) {
             final data = snapshot.value as Map<dynamic, dynamic>;
             final userData = Map<String, dynamic>.from(data);
-            
+
             setState(() {
               coins = userData['coins'] ?? 0;
               keys = userData['key'] ?? 0;
               treasures = userData['treasure'] ?? 0;
               highestLevel = userData['level'] ?? 0;
-              
+
               // Parse levels data (stars for each level)
               if (userData.containsKey('levels') && userData['levels'] is List) {
                 final levelsList = userData['levels'] as List<dynamic>;
@@ -131,17 +131,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 for (int i = 1; i < levelsList.length; i++) {
                   if (levelsList[i] != null) {
                     levelStars[i.toString()] =
-                        levelsList[i] is int
-                            ? levelsList[i]
-                            : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
+                    levelsList[i] is int
+                        ? levelsList[i]
+                        : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
                   }
                 }
               }
-              
+
               isLoading = false;
               _saveToPrefs(); // Save updated data to SharedPreferences
             });
-            
+
             // Also make sure leaderboard entry is up to date
             _updateLeaderboard();
           } else {
@@ -172,26 +172,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
       }
-      
+
       final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
       print('Loading player data for sanitized device ID: $sanitizedDeviceId');
-      
+
       final DatabaseReference userRef = _database.ref().child('users').child(sanitizedDeviceId);
-      
+
       final DatabaseEvent event = await userRef.once();
       final DataSnapshot snapshot = event.snapshot;
-      
+
       if (snapshot.exists) {
         print('Found existing user data');
         final data = snapshot.value as Map<dynamic, dynamic>;
         final userData = Map<String, dynamic>.from(data);
-        
+
         setState(() {
           coins = userData['coins'] ?? 0;
           keys = userData['key'] ?? 0;
           treasures = userData['treasure'] ?? 0;
           highestLevel = userData['level'] ?? 0;
-          
+
           // Parse levels data (stars for each level)
           if (userData.containsKey('levels') && userData['levels'] is List) {
             final levelsList = userData['levels'] as List<dynamic>;
@@ -199,28 +199,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             for (int i = 1; i < levelsList.length; i++) {
               if (levelsList[i] != null) {
                 levelStars[i.toString()] =
-                    levelsList[i] is int
-                        ? levelsList[i]
-                        : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
+                levelsList[i] is int
+                    ? levelsList[i]
+                    : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
               }
             }
           }
-          
+
           isLoading = false;
         });
-        
+
         await _saveToPrefs();
-        
+
         // Check if username needs to be updated
         if (userData['username'] != widget.username) {
           await userRef.update({'username': widget.username});
         }
-        
+
         // Also make sure leaderboard entry exists
         await _updateLeaderboard();
       } else {
         print('No user data found, creating new profile');
-        
+
         // Create new user data with default values
         await userRef.set({
           'username': widget.username,
@@ -233,15 +233,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'streakCount': 0,
           'lastClaimDate': DateTime.now().subtract(Duration(days: 1)).toIso8601String(), // Allow immediate claim
         });
-        
+
         // Create leaderboard entry
         await _updateLeaderboard();
-        
+
         setState(() {
           isLoading = false;
         });
       }
-      
+
       // Check if we need to migrate data from the old non-sanitized ID
       await _checkDataMigration();
     } catch (e) {
@@ -251,57 +251,57 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       });
     }
   }
-  
+
   Future<void> _checkDataMigration() async {
     if (_dataMigrated) return; // Only attempt migration once
-    
+
     try {
       // Only attempt migration if we have a different sanitized ID
       final deviceId = _deviceService.deviceId;
       final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
-      
+
       // If they're the same, no migration needed
       if (deviceId == sanitizedDeviceId) return;
-      
+
       print('Checking for data migration from $deviceId to $sanitizedDeviceId');
-      
+
       // Check if there's data under the old non-sanitized ID
       final oldDataRef = _database.ref().child('users').child(deviceId);
       final oldDataSnapshot = await oldDataRef.get();
-      
+
       if (oldDataSnapshot.exists) {
         print('Found data under old ID, migrating...');
-        
+
         // Copy data to new sanitized path
         final newDataRef = _database.ref().child('users').child(sanitizedDeviceId);
         final newDataSnapshot = await newDataRef.get();
-        
+
         // Only migrate if new location doesn't already have data
         if (!newDataSnapshot.exists) {
           final oldData = oldDataSnapshot.value as Map<dynamic, dynamic>;
           await newDataRef.set(oldData);
-          
+
           print('Data migration complete. Updating leaderboard...');
-          
+
           // Update username if changed
           if (oldData['username'] != widget.username) {
             await newDataRef.update({'username': widget.username});
           }
-          
+
           // Update leaderboard
           await _updateLeaderboard();
-          
+
           // Reload data
           await _loadPlayerData();
         }
-        
+
         _dataMigrated = true;
       }
     } catch (e) {
       print('Error during data migration: $e');
     }
   }
-  
+
   String _getPlatform() {
     if (Theme.of(context).platform == TargetPlatform.android) {
       return 'android';
@@ -318,19 +318,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
     return 'unknown';
   }
-  
+
   Future<void> _updateLeaderboard() async {
     try {
       // Update leaderboard with username as key
       final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/${widget.username}');
-      
+
       // Update leaderboard with latest coin count
       await leaderboardRef.set({
         'coins': coins,
         'name': widget.username,
         'deviceId': _deviceService.sanitizedDeviceId
       });
-      
+
       print('Leaderboard updated for ${widget.username} with $coins coins');
     } catch (e) {
       print('Error updating leaderboard: $e');
@@ -343,7 +343,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await prefs.setInt('keys', keys);
     await prefs.setInt('treasures', treasures);
     await prefs.setInt('highestLevel', highestLevel);
-    
+
     // Store username too for easy access
     await prefs.setString('username', widget.username);
   }
@@ -491,21 +491,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     border: Border.all(color: AppTheme.primaryColor, width: 2),
                   ),
                   child:
-                      isLoading
-                          ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                          )
-                          : Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _buildStatItem('🪙 $coins', 'Coins'),
-                              _buildStatItem('🔑 $keys', 'Keys'),
-                              _buildStatItem('📦 $treasures', 'Treasures'),
-                              _buildStatItem('🏆 $highestLevel', 'Level'),
-                            ],
-                          ),
+                  isLoading
+                      ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                    ),
+                  )
+                      : Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildStatItem('🪙 $coins', 'Coins'),
+                      _buildStatItem('🔑 $keys', 'Keys'),
+                      _buildStatItem('📦 $treasures', 'Treasures'),
+                      _buildStatItem('🏆 $highestLevel', 'Level'),
+                    ],
+                  ),
                 ),
               ),
               Center(
@@ -562,9 +562,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               builder: (_) => DailyLoginScreen(),
                             ),
                           ).then((result) {
-                            if (result == true) {
-                              // Immediately update coins from the reward result if available
-                              _loadPlayerData(); // Reload player data to reflect changes
+                            if (result != null && result is int) {
+                              setState(() {
+                                coins = result;
+                              });
                             }
                           });
                         }),
@@ -613,8 +614,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Positioned.fill(
               child: Center(
                 child: Icon(
-                  Icons.logout_rounded, 
-                  color: Colors.red.shade700, 
+                  Icons.logout_rounded,
+                  color: Colors.red.shade700,
                   size: 26,
                 ),
               ),
@@ -641,11 +642,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _buildMenuButton(
-    BuildContext context,
-    String text,
-    double width,
-    VoidCallback onTap,
-  ) {
+      BuildContext context,
+      String text,
+      double width,
+      VoidCallback onTap,
+      ) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -829,7 +830,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   children: [
                     _buildDialogButton('YES', () async {
                       HapticFeedback.mediumImpact();
-                      
+
                       // Show loading indicator
                       showDialog(
                         context: context,
@@ -867,32 +868,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           );
                         },
                       );
-                      
+
                       // Perform actual logout operations
                       try {
                         // Cancel any data subscriptions
                         await _userDataSubscription?.cancel();
-                        
+
                         // Get the current username for leaderboard update
                         final currentUsername = widget.username;
-                        
+
                         // Clear username from SharedPreferences
                         final prefs = await SharedPreferences.getInstance();
                         await prefs.remove('username');
-                        
+
                         // Remove the device ID association from the leaderboard entry
                         try {
                           // Get the current username for leaderboard update
                           final currentUsername = widget.username;
-                          
+
                           // Check if this user entry exists and was created by this device
                           final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$currentUsername');
                           final snapshot = await leaderboardRef.get();
-                          
+
                           if (snapshot.exists) {
                             final data = snapshot.value as Map<dynamic, dynamic>;
                             final String? deviceId = data['deviceId']?.toString();
-                            
+
                             // Only remove association if this device created it
                             if (deviceId == _deviceService.sanitizedDeviceId) {
                               // Remove the deviceId field to allow reuse of the username
@@ -904,14 +905,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           print('Error removing device ID association: $e');
                           // Continue with logout even if this fails
                         }
-                        
+
                         // Stop any audio that might be playing
                         await _audioService.stopBGM();
-                        
+
                         // Close all dialogs
                         Navigator.pop(context); // Close loading dialog
                         Navigator.pop(context); // Close confirmation dialog
-                        
+
                         // Navigate to username screen
                         Navigator.pushReplacement(
                           context,
@@ -922,7 +923,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         // Close loading dialog if there was an error
                         Navigator.pop(context);
                         Navigator.pop(context);
-                        
+
                         // Show error message
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
