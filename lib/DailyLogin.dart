@@ -3,10 +3,8 @@ import 'dart:math' as math;
 import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:shared_preferences/shared_preferences.dart';
-
-// Assuming DeviceService is defined in a separate file
 import 'services/device_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Helper extension to replace all withValues instances
 extension ColorHelpers on Color {
@@ -290,15 +288,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    // Allow new users (streakCount == 0) to claim immediately
-    if (streakCount == 0) {
-      print('New user or streak reset - can claim day 1');
-      return {'canClaim': true, 'day': 1};
-    }
-
     if (lastClaimDate == null) {
-      print('No last claim date - can claim day 1');
-      return {'canClaim': true, 'day': 1};
+      print('First time user - can claim immediately');
+      return {'canClaim': true, 'day': 1}; // New user can claim immediately
     }
 
     try {
@@ -804,6 +796,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                                 ),
                               ),
 
+
                               Positioned(
                                 bottom: -1,
                                 left: 0,
@@ -831,9 +824,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                                           color: Colors.amber,
                                           size:
                                           (isWebPlatform ? 16 : 10) *
-                                              (isWebPlatform
-                                                  ? webScale
-                                                  : 1.0),
+                                              (isWebPlatform ? webScale : 1.0),
                                         ),
                                         SizedBox(width: isWebPlatform ? 4 : 2),
                                         Text(
@@ -944,7 +935,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
     // Check if this is the day that was just claimed
     final bool isJustClaimed =
-        _lastClaimedDay == day &&
+        _lastClaimedDay == day && status == 'collected' &&
             (_glowController.isAnimating || _shimmerController.isAnimating);
 
     return TweenAnimationBuilder<double>(
@@ -1293,6 +1284,11 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             fontFamily: 'Vip',
             fontSize: fontSize + 1,
             fontWeight: FontWeight.bold,
+            // foreground:
+            //     Paint()
+            //       ..style = PaintingStyle.stroke
+            //       ..strokeWidth = 20
+            //       ..color = Colors.black.withValues(alpha: 0.8),
             letterSpacing: 1.2,
           ),
         ),

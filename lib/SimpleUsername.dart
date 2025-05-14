@@ -371,7 +371,7 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                           Padding(
                             padding: const EdgeInsets.only(bottom: 20),
                             child: Text(
-                              'WELCOME TO BLASTERMAN',
+                              'WELCOME TO BOOMVERSE',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontFamily: 'Vip',
