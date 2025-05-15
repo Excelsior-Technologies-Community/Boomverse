@@ -328,16 +328,16 @@ class Enemy {
     if (shootCooldown > 0) return;
 
     // Check if player is in same row or column
-    bool sameRow = gridY == player.gridY;
-    bool sameColumn = gridX == player.gridX;
+    bool sameRow = gridX == player.gridX;  // Same X = same row (vertical alignment)
+    bool sameColumn = gridY == player.gridY;  // Same Y = same column (horizontal alignment)
 
     if (!sameRow && !sameColumn) return; // Not aligned
 
     // Calculate distance to player
     double distance =
         sameRow
-            ? (gridX - player.gridX).abs().toDouble()
-            : (gridY - player.gridY).abs().toDouble();
+            ? (gridY - player.gridY).abs().toDouble()  // If in same row, check Y distance
+            : (gridX - player.gridX).abs().toDouble();  // If in same column, check X distance
 
     // Check if player is within shooting range
     if (distance > shootingRadius) return;
@@ -345,11 +345,13 @@ class Enemy {
     // Determine correct facing direction
     EnemyDirection requiredDirection;
     if (sameRow) {
-      requiredDirection =
-          player.gridX < gridX ? EnemyDirection.left : EnemyDirection.right;
-    } else {
+      // Same row (X) - need to face up or down
       requiredDirection =
           player.gridY < gridY ? EnemyDirection.up : EnemyDirection.down;
+    } else {
+      // Same column (Y) - need to face left or right
+      requiredDirection =
+          player.gridX < gridX ? EnemyDirection.left : EnemyDirection.right;
     }
 
     // Check if we're facing the right direction
@@ -362,21 +364,23 @@ class Enemy {
     // Check for obstacles in the way
     bool pathClear = true;
     if (sameRow) {
-      int startX = min(gridX, player.gridX);
-      int endX = max(gridX, player.gridX);
-      for (int x = startX + 1; x < endX; x++) {
-        if (gameBoard.getTileType(x, gridY) == GameConstants.wallTile ||
-            gameBoard.getTileType(x, gridY) == GameConstants.hurdleTile) {
-          pathClear = false;
-          break;
-        }
-      }
-    } else {
+      // Same row (X) - check along Y axis
       int startY = min(gridY, player.gridY);
       int endY = max(gridY, player.gridY);
       for (int y = startY + 1; y < endY; y++) {
         if (gameBoard.getTileType(gridX, y) == GameConstants.wallTile ||
             gameBoard.getTileType(gridX, y) == GameConstants.hurdleTile) {
+          pathClear = false;
+          break;
+        }
+      }
+    } else {
+      // Same column (Y) - check along X axis
+      int startX = min(gridX, player.gridX);
+      int endX = max(gridX, player.gridX);
+      for (int x = startX + 1; x < endX; x++) {
+        if (gameBoard.getTileType(x, gridY) == GameConstants.wallTile ||
+            gameBoard.getTileType(x, gridY) == GameConstants.hurdleTile) {
           pathClear = false;
           break;
         }
@@ -409,11 +413,11 @@ class Enemy {
     double exactDirY = 0;
 
     if (sameRow) {
-      // Player is in the same row (same X value), fire horizontally
+      // Player is in the same row (vertical alignment - X coordinates match)
       exactDirX = 0;
       exactDirY = (player.gridY > gridY) ? 1 : -1;
     } else if (sameColumn) {
-      // Player is in the same column (same Y value), fire vertically
+      // Player is in the same column (horizontal alignment - Y coordinates match)
       exactDirX = (player.gridX > gridX) ? 1 : -1;
       exactDirY = 0;
     }
