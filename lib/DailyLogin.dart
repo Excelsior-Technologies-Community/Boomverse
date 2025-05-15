@@ -49,11 +49,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       duration: const Duration(milliseconds: 700),
       vsync: this,
     );
-
     _frameScale = Tween<double>(begin: 0.9, end: 1.0).animate(
       CurvedAnimation(parent: _frameController, curve: Curves.elasticOut),
     );
-
     _frameFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _frameController,
@@ -73,10 +71,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       vsync: this,
     );
     _claimScale = Tween<double>(begin: 0.0, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _claimAnimationController,
-        curve: Curves.easeOutBack,
-      ),
+      CurvedAnimation(parent: _claimAnimationController, curve: Curves.easeIn),
     );
     _claimFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _claimAnimationController, curve: Curves.easeIn),
@@ -108,6 +103,19 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
     _frameController.forward();
     _loadDailyLoginData();
+    _initializeUser();
+  }
+
+  Future<void> _initializeUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      lastClaimDate = prefs.getString('lastClaimDate');
+      streakCount = prefs.getInt('streakCount') ?? 0;
+      setState(() {});
+      _frameController.forward();
+    } catch (e) {
+      // handle error
+    }
   }
 
   @override
@@ -300,7 +308,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           lastClaim.month,
           lastClaim.day,
         );
-        
+
         // If claimed today, mark as collected
         if (lastClaimDay == today && day <= streakCount) {
           statusStr = 'collected';
