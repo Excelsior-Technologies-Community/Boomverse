@@ -97,12 +97,12 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
     // Initialize with null to ensure proper first-time load
     _lastClaimedDay = null;
-    
+
     print('DailyLoginScreen initialized, loading data...');
 
     _frameController.forward();
     _loadDailyLoginData();
-    
+
     // If we have SharedPreferences saved, load them immediately to prevent UI flicker
     _loadFromSharedPrefs();
   }
@@ -124,7 +124,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     try {
       // Clear the existing claimed map to ensure fresh state
       _claimedDaysMap.clear();
-      
+
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
       }
@@ -134,7 +134,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       // First check SharedPreferences for local data
       final prefs = await SharedPreferences.getInstance();
       final lastClaimedDayFromPrefs = prefs.getInt('lastClaimedDay');
-      
+
       await _verifyDatabaseConnection();
 
       final DatabaseReference userRef = FirebaseDatabase.instance
@@ -154,7 +154,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         setState(() {
           streakCount = userData['streakCount'] ?? 0;
           lastClaimDate = userData['lastClaimDate'];
-          
+
           // Check both database and SharedPreferences for lastClaimedDay
           if (userData.containsKey('lastClaimedDay')) {
             _lastClaimedDay = userData['lastClaimedDay'];
@@ -176,18 +176,20 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             for (int day = 1; day < lastClaimedDayFromPrefs; day++) {
               _claimedDaysMap[day] = true;
             }
-            print('Loaded lastClaimedDay from SharedPreferences: $_lastClaimedDay');
+            print(
+              'Loaded lastClaimedDay from SharedPreferences: $_lastClaimedDay',
+            );
             print('Updated claimedDaysMap: $_claimedDaysMap');
           } else {
             _lastClaimedDay = null;
             print('No lastClaimedDay found, setting to null');
           }
-          
+
           print('Loaded streak count: $streakCount');
           print('Loaded last claim date: $lastClaimDate');
           _updateRemainingTime();
         });
-        
+
         // Check if claimed today
         if (lastClaimDate != null) {
           try {
@@ -199,9 +201,11 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
               lastClaim.month,
               lastClaim.day,
             );
-            
+
             if (lastClaimDay == today && _lastClaimedDay != null) {
-              print('Found claim for today - day $_lastClaimedDay was already claimed today');
+              print(
+                'Found claim for today - day $_lastClaimedDay was already claimed today',
+              );
               // Make sure it's marked in our tracking map
               _claimedDaysMap[_lastClaimedDay!] = true;
             }
@@ -214,11 +218,12 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         setState(() {
           streakCount = 0;
           lastClaimDate = null;
-          _lastClaimedDay = null; // Reset this to ensure rewards aren't auto-collected
+          _lastClaimedDay =
+              null; // Reset this to ensure rewards aren't auto-collected
           _updateRemainingTime();
         });
       }
-      
+
       // Force refresh UI after data load - this may help with display issues
       if (mounted) {
         setState(() {
@@ -231,7 +236,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       setState(() {
         streakCount = 0;
         lastClaimDate = null;
-        _lastClaimedDay = null; // Reset this to ensure rewards aren't auto-collected
+        _lastClaimedDay =
+            null; // Reset this to ensure rewards aren't auto-collected
         _updateRemainingTime();
       });
     }
@@ -334,18 +340,18 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       if (lastClaimDay == today && _lastClaimedDay != null) {
         print('Already claimed day $_lastClaimedDay today, canClaim=false');
         return {'canClaim': false, 'day': streakCount};
-      } 
+      }
       // If 24+ hours have passed since last claim, reset to Day 1
       else if (now.difference(lastClaim).inHours >= 24) {
         print('24+ hours since last claim, reset to Day 1, canClaim=true');
         return {'canClaim': true, 'day': 1};
-      } 
+      }
       // If it's the next calendar day, proceed to next day in streak
       else if (today.difference(lastClaimDay).inDays == 1) {
         final nextDay = streakCount >= 7 ? 1 : streakCount + 1;
         print('Next calendar day, proceed to day $nextDay, canClaim=true');
         return {'canClaim': true, 'day': nextDay};
-      } 
+      }
       // If more than 1 day has been missed, reset to Day 1
       else if (today.difference(lastClaimDay).inDays > 1) {
         print('Missed more than 1 day, reset to Day 1, canClaim=true');
@@ -367,7 +373,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     List<Map<String, dynamic>> days = [];
 
     // Debug information
-    print('canClaim: $canClaim, dayToClaim: $dayToClaim, lastClaimDate: $lastClaimDate, _lastClaimedDay: $_lastClaimedDay');
+    print(
+      'canClaim: $canClaim, dayToClaim: $dayToClaim, lastClaimDate: $lastClaimDate, _lastClaimedDay: $_lastClaimedDay',
+    );
     print('claimedDaysMap: $_claimedDaysMap');
 
     for (int day = 1; day <= 7; day++) {
@@ -376,14 +384,18 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       // First and foremost check our in-memory tracking map
       if (_claimedDaysMap.containsKey(day) && _claimedDaysMap[day] == true) {
         statusStr = 'collected';
-        print('Day $day marked as collected because it exists in _claimedDaysMap');
+        print(
+          'Day $day marked as collected because it exists in _claimedDaysMap',
+        );
       }
       // Check if this day was claimed directly
       else if (_lastClaimedDay == day) {
         statusStr = 'collected';
         // Update our tracking map for consistency
         _claimedDaysMap[day] = true;
-        print('Day $day marked as collected because it was directly claimed (_lastClaimedDay=$_lastClaimedDay)');
+        print(
+          'Day $day marked as collected because it was directly claimed (_lastClaimedDay=$_lastClaimedDay)',
+        );
       }
       // Check if the day was already claimed today
       else if (lastClaimDate != null) {
@@ -397,23 +409,31 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         );
 
         // If claimed today AND this specific day was already claimed, mark as collected
-        if (lastClaimDay == today && day <= streakCount && _lastClaimedDay != null) {
+        if (lastClaimDay == today &&
+            day <= streakCount &&
+            _lastClaimedDay != null) {
           statusStr = 'collected';
           // Update our tracking map for consistency
           _claimedDaysMap[day] = true;
-          print('Day $day marked as collected because of streakCount=$streakCount and _lastClaimedDay=$_lastClaimedDay');
+          print(
+            'Day $day marked as collected because of streakCount=$streakCount and _lastClaimedDay=$_lastClaimedDay',
+          );
         }
         // If can claim and it's the current day in streak, mark as unlocked
         else if (canClaim && day == dayToClaim) {
           statusStr = 'unlocked';
-          print('Day $day marked as unlocked because canClaim=$canClaim and dayToClaim=$dayToClaim');
+          print(
+            'Day $day marked as unlocked because canClaim=$canClaim and dayToClaim=$dayToClaim',
+          );
         }
         // If it's a previous day in the streak, mark as collected
         else if (day < dayToClaim) {
           statusStr = 'collected';
           // Update our tracking map for consistency
           _claimedDaysMap[day] = true;
-          print('Day $day marked as collected because day < dayToClaim=$dayToClaim');
+          print(
+            'Day $day marked as collected because day < dayToClaim=$dayToClaim',
+          );
         }
         // Otherwise, it's locked
         else {
@@ -446,23 +466,32 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
   Future<void> _claimReward(String deviceId, int reward, int dayToClaim) async {
     try {
-      print('CLAIM ATTEMPT: Trying to claim day $dayToClaim, reward $reward, _claimedDaysMap=$_claimedDaysMap');
+      print(
+        'CLAIM ATTEMPT: Trying to claim day $dayToClaim, reward $reward, _claimedDaysMap=$_claimedDaysMap',
+      );
 
       // First check if there's already a claim in progress to prevent double-processing
-      if (_claimedDaysMap.containsKey(dayToClaim) && _claimedDaysMap[dayToClaim] == true) {
-        print('WARNING: Day $dayToClaim already marked as claimed in _claimedDaysMap');
-        
+      if (_claimedDaysMap.containsKey(dayToClaim) &&
+          _claimedDaysMap[dayToClaim] == true) {
+        print(
+          'WARNING: Day $dayToClaim already marked as claimed in _claimedDaysMap',
+        );
+
         // Before rejecting, verify whether this claim was saved to persistent storage
         final prefs = await SharedPreferences.getInstance();
         final savedClaimedDay = prefs.getInt('lastClaimedDay');
         final savedLastClaimDate = prefs.getString('lastClaimDate');
-        
-        print('Checking SharedPrefs: savedClaimedDay=$savedClaimedDay, savedLastClaimDate=$savedLastClaimDate');
-        
+
+        print(
+          'Checking SharedPrefs: savedClaimedDay=$savedClaimedDay, savedLastClaimDate=$savedLastClaimDate',
+        );
+
         // If there's no saved claim in SharedPreferences, allow the claim to proceed
         // This handles cases where UI shows claimed but data wasn't saved
         if (savedClaimedDay != dayToClaim) {
-          print('SharedPrefs disagrees with local state - allowing claim to proceed');
+          print(
+            'SharedPrefs disagrees with local state - allowing claim to proceed',
+          );
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -480,11 +509,12 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       // Set the day as attempting to claim (not fully claimed yet)
       // We'll confirm the claim after database update
       setState(() {
-        _claimedDaysMap[dayToClaim] = false; // Mark as "in progress" (not confirmed yet)
+        _claimedDaysMap[dayToClaim] =
+            false; // Mark as "in progress" (not confirmed yet)
       });
-      
+
       print('Starting claim process for day $dayToClaim with reward $reward');
-      
+
       // Ensure device service is initialized
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
@@ -511,7 +541,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       // Check the current claim status before proceeding with database operations
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
-      
+
       // Only check for conflicts if we have a previous claim date
       if (lastClaimDate != null) {
         try {
@@ -521,20 +551,26 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             lastClaim.month,
             lastClaim.day,
           );
-          
+
           // Check if already claimed TODAY but a DIFFERENT reward
-          if (lastClaimDay == today && _lastClaimedDay != null && _lastClaimedDay != dayToClaim) {
-            print('ERROR: Different reward already claimed today: $_lastClaimedDay');
+          if (lastClaimDay == today &&
+              _lastClaimedDay != null &&
+              _lastClaimedDay != dayToClaim) {
+            print(
+              'ERROR: Different reward already claimed today: $_lastClaimedDay',
+            );
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('You have already claimed a different reward today!'),
+                  content: Text(
+                    'You have already claimed a different reward today!',
+                  ),
                   backgroundColor: Colors.orange,
                   duration: Duration(seconds: 2),
                 ),
               );
             }
-            
+
             // Reset the state since we couldn't claim
             setState(() {
               _claimedDaysMap.remove(dayToClaim);
@@ -558,18 +594,18 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         });
         throw Exception('Database read error: $e');
       }
-      
+
       final DataSnapshot snapshot = event.snapshot;
       print('Got database snapshot, exists: ${snapshot.exists}');
 
       final String todayDateString = DateTime.now().toIso8601String();
       bool updateSuccess = false;
-      
+
       if (snapshot.exists) {
         final data = snapshot.value as Map<dynamic, dynamic>;
         final userData = Map<String, dynamic>.from(data);
         print('User data: $userData');
-        
+
         // Carefully extract the current coin count
         int currentCoins = 0;
         if (userData.containsKey('coins')) {
@@ -579,7 +615,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             currentCoins = int.tryParse(userData['coins'].toString()) ?? 0;
           }
         }
-        
+
         print('Current coins: $currentCoins, adding reward: $reward');
         final int newCoins = currentCoins + reward;
         final username = userData['username'] as String? ?? 'Player';
@@ -746,7 +782,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             _updateRemainingTime();
             _lastClaimedDay = dayToClaim;
             _claimedDaysMap[dayToClaim] = true; // Now truly mark as claimed
-            print('Day $dayToClaim marked as claimed in claimedDaysMap after successful DB update');
+            print(
+              'Day $dayToClaim marked as claimed in claimedDaysMap after successful DB update',
+            );
           });
 
           // Show success message
@@ -777,7 +815,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         if (mounted) {
           setState(() {});
         }
-        
+
         // Load updated data to ensure everything is in sync
         await _loadDailyLoginData();
       } else {
@@ -793,12 +831,12 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       return Future.value();
     } catch (e) {
       print('ERROR claiming reward: $e');
-      
+
       // Reset the claiming state
       setState(() {
         _claimedDaysMap.remove(dayToClaim);
       });
-      
+
       // Show error message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -809,7 +847,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           ),
         );
       }
-      
+
       return Future.error('Failed to claim reward: $e');
     }
   }
@@ -1155,27 +1193,30 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     required double webScale,
   }) {
     final isWebPlatform = kIsWeb;
-    
+
     // Debug the status to troubleshoot issues
-    print('Building day square for Day $day with status: $status, _lastClaimedDay: $_lastClaimedDay, in claimedMap: ${_claimedDaysMap.containsKey(day)}');
-    
+    print(
+      'Building day square for Day $day with status: $status, _lastClaimedDay: $_lastClaimedDay, in claimedMap: ${_claimedDaysMap.containsKey(day)}',
+    );
+
     // Always prioritize the claimed days map for determining status
     // This ensures UI consistency when returning to the screen
-    bool isDayClaimed = _claimedDaysMap.containsKey(day) && _claimedDaysMap[day] == true;
-    
+    bool isDayClaimed =
+        _claimedDaysMap.containsKey(day) && _claimedDaysMap[day] == true;
+
     // Also check _lastClaimedDay as a backup
     if (!isDayClaimed && _lastClaimedDay == day) {
       isDayClaimed = true;
       // Update our map for consistency
       _claimedDaysMap[day] = true;
     }
-    
+
     // Override status if we know it's been claimed
     if (isDayClaimed) {
       status = 'collected';
       print('Forcing status to collected for Day $day because it was claimed');
     }
-    
+
     // Force this to use a key to ensure it rebuilds properly
     return KeyedSubtree(
       key: ValueKey('day_square_$day'),
@@ -1190,18 +1231,26 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           onTap: status == 'unlocked' ? () => _handleDayTap(day, reward) : null,
           child: Container(
             decoration: BoxDecoration(
-              color: status == 'collected'
-                  ? Color(0xFF8FB448)
-                  : (status == 'unlocked' ? Color(0xFFE0A65B) : Color(0xFFF2D17A)),
+              color:
+                  status == 'collected'
+                      ? Color(0xFF8FB448)
+                      : (status == 'unlocked'
+                          ? Color(0xFFE0A65B)
+                          : Color(0xFFF2D17A)),
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
-                color: status == 'collected'
-                    ? Color(0xFF6C9138)
-                    : (status == 'unlocked' ? Color(0xFFB17B34) : Color(0xFFD1A841)),
-                width: 1
+                color:
+                    status == 'collected'
+                        ? Color(0xFF6C9138)
+                        : (status == 'unlocked'
+                            ? Color(0xFFB17B34)
+                            : Color(0xFFD1A841)),
+                width: 1,
               ),
               boxShadow:
-                  isDayClaimed && (_glowController.isAnimating || _shimmerController.isAnimating)
+                  isDayClaimed &&
+                          (_glowController.isAnimating ||
+                              _shimmerController.isAnimating)
                       ? [
                         BoxShadow(
                           color: Colors.amber.withAlpha(128),
@@ -1229,7 +1278,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             ),
             child: Stack(
               children: [
-                if (isDayClaimed && (_glowController.isAnimating || _shimmerController.isAnimating))
+                if (isDayClaimed &&
+                    (_glowController.isAnimating ||
+                        _shimmerController.isAnimating))
                   AnimatedBuilder(
                     animation: _glowController,
                     builder: (context, child) {
@@ -1415,7 +1466,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                       ),
                     ),
                   ),
-                if (isDayClaimed && (_glowController.isAnimating || _shimmerController.isAnimating))
+                if (isDayClaimed &&
+                    (_glowController.isAnimating ||
+                        _shimmerController.isAnimating))
                   AnimatedBuilder(
                     animation: _shimmerController,
                     builder: (context, child) {
@@ -1451,7 +1504,10 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                       );
                     },
                   ),
-                if (isDayClaimed && status == 'collected' && (_glowController.isAnimating || _shimmerController.isAnimating))
+                if (isDayClaimed &&
+                    status == 'collected' &&
+                    (_glowController.isAnimating ||
+                        _shimmerController.isAnimating))
                   AnimatedBuilder(
                     animation: _glowController,
                     builder: (context, child) {
@@ -1547,10 +1603,10 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
   Future<void> _handleDayTap(int day, int reward) async {
     try {
       print('_handleDayTap: User tapped on day $day with reward $reward');
-      
+
       // Don't set claimed state here - let _claimReward handle it properly
       // This prevents the UI from showing as claimed before the database update succeeds
-      
+
       // Ensure device service is initialized
       if (!_deviceService.isInitialized) {
         await _deviceService.initDeviceId();
@@ -1564,7 +1620,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             content: Row(
               children: [
                 SizedBox(
-                  width: 20, height: 20,
+                  width: 20,
+                  height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
@@ -1584,10 +1641,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       await _claimReward(deviceId, reward, day);
 
       // _claimReward now handles everything including animations and state updates
-
     } catch (e) {
       print('Error in _handleDayTap: $e');
-      
+
       // Let _claimReward handle error messages and recovery
     }
   }
@@ -1600,7 +1656,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       final lastClaimedDayFromPrefs = prefs.getInt('lastClaimedDay');
       final savedStreakCount = prefs.getInt('streakCount') ?? 0;
       final savedLastClaimDate = prefs.getString('lastClaimDate');
-      
+
       if (lastClaimedDayFromPrefs != null) {
         // Check if the claim was today or in the past
         bool claimedToday = false;
@@ -1614,18 +1670,20 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
               lastClaim.month,
               lastClaim.day,
             );
-            
+
             claimedToday = (lastClaimDay == today);
-            print('Quick load check: Claim was${claimedToday ? '' : ' not'} made today');
+            print(
+              'Quick load check: Claim was${claimedToday ? '' : ' not'} made today',
+            );
           } catch (e) {
             print('Error parsing date in quick load: $e');
           }
         }
-        
+
         if (mounted) {
           setState(() {
             _lastClaimedDay = lastClaimedDayFromPrefs;
-            
+
             // Only mark as claimed if it was claimed today
             if (claimedToday) {
               _claimedDaysMap[lastClaimedDayFromPrefs] = true;
@@ -1634,7 +1692,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
                 _claimedDaysMap[day] = true;
               }
             }
-            
+
             // If we have streak count and claim date, use those too
             if (savedStreakCount > 0) {
               streakCount = savedStreakCount;
@@ -1643,8 +1701,10 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
               lastClaimDate = savedLastClaimDate;
               _updateRemainingTime();
             }
-            
-            print('Quick-loaded from SharedPrefs: lastClaimedDay=$lastClaimedDayFromPrefs, streakCount=$streakCount, claimedToday=$claimedToday');
+
+            print(
+              'Quick-loaded from SharedPrefs: lastClaimedDay=$lastClaimedDayFromPrefs, streakCount=$streakCount, claimedToday=$claimedToday',
+            );
             print('Quick-loaded claimedDaysMap: $_claimedDaysMap');
           });
         }

@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'SplashScreen.dart';
 import 'services/device_service.dart';
+import 'services/audio_service.dart';
 
 // Define app-wide theme constants
 class AppTheme {
@@ -65,7 +66,7 @@ void main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-  
+
   // Hide system UI
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -79,7 +80,7 @@ void main() async {
     print('Error initializing Firebase: $e');
     // Continue with app startup even if Firebase fails
   }
-  
+
   // Initialize device service
   try {
     final deviceService = DeviceService();
@@ -88,6 +89,16 @@ void main() async {
   } catch (e) {
     print('Error initializing device ID: $e');
     // Continue with app startup even if device ID initialization fails
+  }
+
+  // Initialize audio service
+  try {
+    final audioService = AudioService();
+    await audioService.init();
+    print('Audio service initialized successfully');
+  } catch (e) {
+    print('Error initializing audio service: $e');
+    // Continue with app startup even if audio initialization fails
   }
 
   runApp(const MyApp());
