@@ -58,9 +58,6 @@ class AudioService {
       print('Background music completed, restarting...');
       playBGM();
     });
-
-    // Start background music
-    await playBGM();
   }
 
   // Save settings to SharedPreferences

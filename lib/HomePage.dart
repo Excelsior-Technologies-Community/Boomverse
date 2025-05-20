@@ -51,15 +51,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       CurvedAnimation(parent: _buttonController, curve: Curves.easeInOut),
     );
 
-    // Initialize audio
+    // Initialize audio and start background music
     _initAudio();
 
     _initData();
   }
 
   Future<void> _initAudio() async {
-    await _audioService.init();
-    await _audioService.playBGM();
+    try {
+      await _audioService.init();
+      await _audioService.playBGM();
+      print('Background music started successfully in HomePage');
+    } catch (e) {
+      print('Error initializing audio in HomePage: $e');
+    }
   }
 
   Future<void> _initData() async {
@@ -109,10 +114,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
 
       final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
-      final DatabaseReference userRef = _database.ref().child('users').child(sanitizedDeviceId);
+      final DatabaseReference userRef = _database
+          .ref()
+          .child('users')
+          .child(sanitizedDeviceId);
 
       _userDataSubscription = userRef.onValue.listen(
-            (DatabaseEvent event) {
+        (DatabaseEvent event) {
           final DataSnapshot snapshot = event.snapshot;
           if (snapshot.exists) {
             final data = snapshot.value as Map<dynamic, dynamic>;
@@ -125,15 +133,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               highestLevel = userData['level'] ?? 0;
 
               // Parse levels data (stars for each level)
-              if (userData.containsKey('levels') && userData['levels'] is List) {
+              if (userData.containsKey('levels') &&
+                  userData['levels'] is List) {
                 final levelsList = userData['levels'] as List<dynamic>;
                 levelStars = {};
                 for (int i = 1; i < levelsList.length; i++) {
                   if (levelsList[i] != null) {
                     levelStars[i.toString()] =
-                    levelsList[i] is int
-                        ? levelsList[i]
-                        : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
+                        levelsList[i] is int
+                            ? levelsList[i]
+                            : int.tryParse(levelsList[i]?.toString() ?? '0') ??
+                                0;
                   }
                 }
               }
@@ -176,7 +186,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final sanitizedDeviceId = _deviceService.sanitizedDeviceId;
       print('Loading player data for sanitized device ID: $sanitizedDeviceId');
 
-      final DatabaseReference userRef = _database.ref().child('users').child(sanitizedDeviceId);
+      final DatabaseReference userRef = _database
+          .ref()
+          .child('users')
+          .child(sanitizedDeviceId);
 
       final DatabaseEvent event = await userRef.once();
       final DataSnapshot snapshot = event.snapshot;
@@ -199,9 +212,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             for (int i = 1; i < levelsList.length; i++) {
               if (levelsList[i] != null) {
                 levelStars[i.toString()] =
-                levelsList[i] is int
-                    ? levelsList[i]
-                    : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
+                    levelsList[i] is int
+                        ? levelsList[i]
+                        : int.tryParse(levelsList[i]?.toString() ?? '0') ?? 0;
               }
             }
           }
@@ -228,10 +241,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'key': 0,
           'treasure': 0,
           'level': 1,
-          'levels': List.filled(100, 0), // Initialize with 0 stars for all levels
+          'levels': List.filled(
+            100,
+            0,
+          ), // Initialize with 0 stars for all levels
           'platform': _getPlatform(),
           'streakCount': 0,
-          'lastClaimDate': DateTime.now().subtract(Duration(days: 1)).toIso8601String(), // Allow immediate claim
+          'lastClaimDate':
+              DateTime.now()
+                  .subtract(Duration(days: 1))
+                  .toIso8601String(), // Allow immediate claim
         });
 
         // Create leaderboard entry
@@ -273,7 +292,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         print('Found data under old ID, migrating...');
 
         // Copy data to new sanitized path
-        final newDataRef = _database.ref().child('users').child(sanitizedDeviceId);
+        final newDataRef = _database
+            .ref()
+            .child('users')
+            .child(sanitizedDeviceId);
         final newDataSnapshot = await newDataRef.get();
 
         // Only migrate if new location doesn't already have data
@@ -322,13 +344,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Future<void> _updateLeaderboard() async {
     try {
       // Update leaderboard with username as key
-      final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/${widget.username}');
+      final leaderboardRef = FirebaseDatabase.instance.ref(
+        'leaderboard/${widget.username}',
+      );
 
       // Update leaderboard with latest coin count
       await leaderboardRef.set({
         'coins': coins,
         'name': widget.username,
-        'deviceId': _deviceService.sanitizedDeviceId
+        'deviceId': _deviceService.sanitizedDeviceId,
       });
 
       print('Leaderboard updated for ${widget.username} with $coins coins');
@@ -351,8 +375,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _buttonController.dispose();
-    _userDataSubscription?.cancel(); // Clean up the subscription
-    _audioService.stopBGM(); // Stop background music
+    _userDataSubscription?.cancel();
     super.dispose();
   }
 
@@ -367,10 +390,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       child: AnimatedBuilder(
         animation: _buttonController,
         builder: (context, child) {
-          return Transform.scale(
-            scale: _buttonScale.value,
-            child: child,
-          );
+          return Transform.scale(scale: _buttonScale.value, child: child);
         },
         child: Container(
           width: 100,
@@ -491,21 +511,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     border: Border.all(color: AppTheme.primaryColor, width: 2),
                   ),
                   child:
-                  isLoading
-                      ? const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                    ),
-                  )
-                      : Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildStatItem('🪙 $coins', 'Coins'),
-                      _buildStatItem('🔑 $keys', 'Keys'),
-                      _buildStatItem('📦 $treasures', 'Treasures'),
-                      _buildStatItem('🏆 $highestLevel', 'Level'),
-                    ],
-                  ),
+                      isLoading
+                          ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          )
+                          : Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildStatItem('🪙 $coins', 'Coins'),
+                              _buildStatItem('🔑 $keys', 'Keys'),
+                              _buildStatItem('📦 $treasures', 'Treasures'),
+                              _buildStatItem('🏆 $highestLevel', 'Level'),
+                            ],
+                          ),
                 ),
               ),
               Center(
@@ -592,10 +612,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Colors.white,
-              Colors.white.withOpacity(0.9),
-            ],
+            colors: [Colors.white, Colors.white.withOpacity(0.9)],
           ),
           boxShadow: const [
             BoxShadow(
@@ -604,10 +621,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               offset: Offset(0, 2),
             ),
           ],
-          border: Border.all(
-            color: Colors.red.shade300,
-            width: 1.5,
-          ),
+          border: Border.all(color: Colors.red.shade300, width: 1.5),
         ),
         child: Stack(
           children: [
@@ -626,10 +640,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
-                    colors: [
-                      Colors.transparent,
-                      Colors.red.withOpacity(0.05),
-                    ],
+                    colors: [Colors.transparent, Colors.red.withOpacity(0.05)],
                     stops: const [0.7, 1.0],
                   ),
                 ),
@@ -642,11 +653,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _buildMenuButton(
-      BuildContext context,
-      String text,
-      double width,
-      VoidCallback onTap,
-      ) {
+    BuildContext context,
+    String text,
+    double width,
+    VoidCallback onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -887,18 +898,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           final currentUsername = widget.username;
 
                           // Check if this user entry exists and was created by this device
-                          final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$currentUsername');
+                          final leaderboardRef = FirebaseDatabase.instance.ref(
+                            'leaderboard/$currentUsername',
+                          );
                           final snapshot = await leaderboardRef.get();
 
                           if (snapshot.exists) {
-                            final data = snapshot.value as Map<dynamic, dynamic>;
-                            final String? deviceId = data['deviceId']?.toString();
+                            final data =
+                                snapshot.value as Map<dynamic, dynamic>;
+                            final String? deviceId =
+                                data['deviceId']?.toString();
 
                             // Only remove association if this device created it
                             if (deviceId == _deviceService.sanitizedDeviceId) {
                               // Remove the deviceId field to allow reuse of the username
                               await leaderboardRef.child('deviceId').remove();
-                              print('Device ID association removed for username: $currentUsername');
+                              print(
+                                'Device ID association removed for username: $currentUsername',
+                              );
                             }
                           }
                         } catch (e) {
@@ -916,7 +933,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         // Navigate to username screen
                         Navigator.pushReplacement(
                           context,
-                          MaterialPageRoute(builder: (_) => const SimpleUsernamePage()),
+                          MaterialPageRoute(
+                            builder: (_) => const SimpleUsernamePage(),
+                          ),
                         );
                       } catch (e) {
                         print('Error during logout: $e');

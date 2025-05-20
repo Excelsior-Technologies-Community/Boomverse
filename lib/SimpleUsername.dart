@@ -15,7 +15,8 @@ class SimpleUsernamePage extends StatefulWidget {
   _SimpleUsernamePageState createState() => _SimpleUsernamePageState();
 }
 
-class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTickerProviderStateMixin {
+class _SimpleUsernamePageState extends State<SimpleUsernamePage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -36,18 +37,15 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
     );
 
     _buttonScaleAnimation = Tween<double>(begin: 1.0, end: 0.92).animate(
-      CurvedAnimation(parent: _buttonAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+        parent: _buttonAnimationController,
+        curve: Curves.easeInOut,
+      ),
     );
 
-    _initAudio();
     _initializeDeviceService();
     _checkForExistingUsername();
     _checkForLegacyAccount();
-  }
-
-  Future<void> _initAudio() async {
-    await _audioService.init();
-    await _audioService.playBGM();
   }
 
   Future<void> _initializeDeviceService() async {
@@ -78,7 +76,8 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
   }
 
   String _sanitizePathSegment(String path) {
-    return path.replaceAll('.', '_')
+    return path
+        .replaceAll('.', '_')
         .replaceAll('#', '_')
         .replaceAll('\$', '_')
         .replaceAll('[', '_')
@@ -99,7 +98,9 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
         final deviceId = _deviceService.deviceId;
         final sanitizedDeviceId = _sanitizePathSegment(deviceId);
 
-        final legacyUserRef = FirebaseDatabase.instance.ref('users/${currentUser.uid}');
+        final legacyUserRef = FirebaseDatabase.instance.ref(
+          'users/${currentUser.uid}',
+        );
         final snapshot = await legacyUserRef.get();
 
         if (snapshot.exists) {
@@ -113,10 +114,14 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
             _controller.text = username;
           });
 
-          final userRef = FirebaseDatabase.instance.ref('users/$sanitizedDeviceId');
+          final userRef = FirebaseDatabase.instance.ref(
+            'users/$sanitizedDeviceId',
+          );
           await userRef.set(userData);
 
-          final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+          final leaderboardRef = FirebaseDatabase.instance.ref(
+            'leaderboard/$username',
+          );
           await leaderboardRef.set({
             'coins': userData['coins'] ?? 0,
             'name': username,
@@ -191,7 +196,9 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
 
       print('Current device ID: $sanitizedDeviceId');
 
-      final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
+      final leaderboardRef = FirebaseDatabase.instance.ref(
+        'leaderboard/$username',
+      );
       final leaderboardSnapshot = await leaderboardRef.get();
 
       if (leaderboardSnapshot.exists) {
@@ -199,11 +206,15 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
         final String? associatedDeviceId = userData['deviceId']?.toString();
         print('Associated device ID for $username: $associatedDeviceId');
 
-        if (associatedDeviceId != null && associatedDeviceId != sanitizedDeviceId) {
-          print('Device IDs do not match: $associatedDeviceId != $sanitizedDeviceId');
+        if (associatedDeviceId != null &&
+            associatedDeviceId != sanitizedDeviceId) {
+          print(
+            'Device IDs do not match: $associatedDeviceId != $sanitizedDeviceId',
+          );
           setState(() {
             _isSubmitting = false;
-            _errorMessage = "This username is already taken by another device. Please try another.";
+            _errorMessage =
+                "This username is already taken by another device. Please try another.";
           });
           return;
         }
@@ -239,7 +250,9 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
         final userSnapshot = await userRef.get();
 
         if (!userSnapshot.exists) {
-          print('Creating new user data for $username with device ID $sanitizedDeviceId');
+          print(
+            'Creating new user data for $username with device ID $sanitizedDeviceId',
+          );
           await userRef.set({
             'username': username,
             'coins': 0,
@@ -253,14 +266,13 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
           });
         } else {
           print('Updating existing user data with new username: $username');
-          await userRef.update({
-            'username': username,
-          });
+          await userRef.update({'username': username});
         }
 
-        final userData = userSnapshot.exists
-            ? (userSnapshot.value as Map<dynamic, dynamic>)
-            : {'coins': 0};
+        final userData =
+            userSnapshot.exists
+                ? (userSnapshot.value as Map<dynamic, dynamic>)
+                : {'coins': 0};
         final coins = userData['coins'] ?? 0;
 
         print('Updating leaderboard for $username');
@@ -310,24 +322,26 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
     final bool isSmallDevice = size.height < 600;
     final bool isWebPlatform = size.width > 650;
 
-    final double logoHeight = isSmallDevice
-        ? size.height * 0.10
-        : isWebPlatform
-        ? size.height * 0.20
-        : size.height * 0.15;
-    final double fontSize = isSmallDevice
-        ? 16.0
-        : isWebPlatform
-        ? 24.0
-        : 20.0;
-    final double buttonHeight = isSmallDevice
-        ? 40.0
-        : isWebPlatform
-        ? 60.0
-        : 50.0;
-    final double contentWidth = isWebPlatform
-        ? size.width * 0.5
-        : size.width * 0.85;
+    final double logoHeight =
+        isSmallDevice
+            ? size.height * 0.10
+            : isWebPlatform
+            ? size.height * 0.20
+            : size.height * 0.15;
+    final double fontSize =
+        isSmallDevice
+            ? 16.0
+            : isWebPlatform
+            ? 24.0
+            : 20.0;
+    final double buttonHeight =
+        isSmallDevice
+            ? 40.0
+            : isWebPlatform
+            ? 60.0
+            : 50.0;
+    final double contentWidth =
+        isWebPlatform ? size.width * 0.5 : size.width * 0.85;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -344,20 +358,16 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
           child: Stack(
             children: [
               Positioned.fill(
-                child: Container(
-                  color: Colors.black.withOpacity(0.5),
-                ),
+                child: Container(color: Colors.black.withOpacity(0.5)),
               ),
               Center(
                 child: SingleChildScrollView(
                   padding: EdgeInsets.symmetric(
-                      horizontal: isWebPlatform ? 48 : 16,
-                      vertical: isSmallDevice ? 10 : 20
+                    horizontal: isWebPlatform ? 48 : 16,
+                    vertical: isSmallDevice ? 10 : 20,
                   ),
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: 600,
-                    ),
+                    constraints: BoxConstraints(maxWidth: 600),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -478,14 +488,21 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                           fontFamily: 'Vip',
                                         ),
                                         contentPadding: EdgeInsets.symmetric(
-                                            horizontal: 20,
-                                            vertical: isSmallDevice ? 8 : 12
+                                          horizontal: 20,
+                                          vertical: isSmallDevice ? 8 : 12,
                                         ),
                                       ),
                                       maxLength: 12,
                                       textAlign: TextAlign.center,
-                                      textCapitalization: TextCapitalization.words,
-                                      buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                                      textCapitalization:
+                                          TextCapitalization.words,
+                                      buildCounter:
+                                          (
+                                            context, {
+                                            required currentLength,
+                                            required isFocused,
+                                            maxLength,
+                                          }) => null,
                                     ),
                                   ),
                                 ),
@@ -493,63 +510,81 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                               SizedBox(height: isSmallDevice ? 8 : 12),
                               AnimatedSwitcher(
                                 duration: Duration(milliseconds: 300),
-                                child: _errorMessage != null
-                                    ? Container(
-                                  key: ValueKey('error'),
-                                  padding: EdgeInsets.symmetric(
-                                      vertical: isSmallDevice ? 6 : 8,
-                                      horizontal: isSmallDevice ? 8 : 12
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.red.withOpacity(0.5)),
-                                  ),
-                                  child: Text(
-                                    _errorMessage!,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontFamily: 'Vip',
-                                      fontSize: isSmallDevice ? 12 : 14,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                )
-                                    : _successMessage != null
-                                    ? Container(
-                                  key: ValueKey('success'),
-                                  padding: EdgeInsets.symmetric(
-                                      vertical: isSmallDevice ? 6 : 8,
-                                      horizontal: isSmallDevice ? 8 : 12
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.green.withOpacity(0.5)),
-                                  ),
-                                  child: Text(
-                                    _successMessage!,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontFamily: 'Vip',
-                                      fontSize: isSmallDevice ? 12 : 14,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                )
-                                    : SizedBox(
-                                    height: isSmallDevice ? 30 : 40,
-                                    key: ValueKey('empty')
-                                ),
+                                child:
+                                    _errorMessage != null
+                                        ? Container(
+                                          key: ValueKey('error'),
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: isSmallDevice ? 6 : 8,
+                                            horizontal: isSmallDevice ? 8 : 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.red.withOpacity(
+                                                0.5,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _errorMessage!,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontFamily: 'Vip',
+                                              fontSize: isSmallDevice ? 12 : 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        )
+                                        : _successMessage != null
+                                        ? Container(
+                                          key: ValueKey('success'),
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: isSmallDevice ? 6 : 8,
+                                            horizontal: isSmallDevice ? 8 : 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.withOpacity(
+                                              0.2,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.green.withOpacity(
+                                                0.5,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _successMessage!,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontFamily: 'Vip',
+                                              fontSize: isSmallDevice ? 12 : 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        )
+                                        : SizedBox(
+                                          height: isSmallDevice ? 30 : 40,
+                                          key: ValueKey('empty'),
+                                        ),
                               ),
                               SizedBox(height: isSmallDevice ? 10 : 16),
                               GestureDetector(
                                 onTap: _isSubmitting ? null : _saveUsername,
-                                onTapDown: (_) => _buttonAnimationController.forward(),
-                                onTapUp: (_) => _buttonAnimationController.reverse(),
-                                onTapCancel: () => _buttonAnimationController.reverse(),
+                                onTapDown:
+                                    (_) => _buttonAnimationController.forward(),
+                                onTapUp:
+                                    (_) => _buttonAnimationController.reverse(),
+                                onTapCancel:
+                                    () => _buttonAnimationController.reverse(),
                                 child: AnimatedBuilder(
                                   animation: _buttonAnimationController,
                                   builder: (context, child) {
@@ -559,11 +594,12 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                     );
                                   },
                                   child: Container(
-                                    width: isWebPlatform
-                                        ? 200
-                                        : isSmallDevice
-                                        ? 150
-                                        : 180,
+                                    width:
+                                        isWebPlatform
+                                            ? 200
+                                            : isSmallDevice
+                                            ? 150
+                                            : 180,
                                     height: buttonHeight,
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
@@ -575,10 +611,14 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
                                       ),
-                                      borderRadius: BorderRadius.circular(buttonHeight / 2),
+                                      borderRadius: BorderRadius.circular(
+                                        buttonHeight / 2,
+                                      ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Color(0xFF7AC74C).withOpacity(0.5),
+                                          color: Color(
+                                            0xFF7AC74C,
+                                          ).withOpacity(0.5),
                                           blurRadius: 10,
                                           spreadRadius: 1,
                                           offset: Offset(0, 3),
@@ -586,36 +626,42 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                                       ],
                                     ),
                                     child: Center(
-                                      child: _isSubmitting
-                                          ? SizedBox(
-                                        height: isSmallDevice ? 20 : 24,
-                                        width: isSmallDevice ? 20 : 24,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      )
-                                          : Text(
-                                        'START GAME',
-                                        style: TextStyle(
-                                          fontFamily: 'Vip',
-                                          fontSize: isSmallDevice
-                                              ? 16
-                                              : isWebPlatform
-                                              ? 22
-                                              : 18,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 1.0,
-                                          shadows: [
-                                            Shadow(
-                                              color: Colors.black.withOpacity(0.5),
-                                              offset: Offset(1, 1),
-                                              blurRadius: 2,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                      child:
+                                          _isSubmitting
+                                              ? SizedBox(
+                                                height: isSmallDevice ? 20 : 24,
+                                                width: isSmallDevice ? 20 : 24,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2.5,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(Colors.white),
+                                                ),
+                                              )
+                                              : Text(
+                                                'START GAME',
+                                                style: TextStyle(
+                                                  fontFamily: 'Vip',
+                                                  fontSize:
+                                                      isSmallDevice
+                                                          ? 16
+                                                          : isWebPlatform
+                                                          ? 22
+                                                          : 18,
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 1.0,
+                                                  shadows: [
+                                                    Shadow(
+                                                      color: Colors.black
+                                                          .withOpacity(0.5),
+                                                      offset: Offset(1, 1),
+                                                      blurRadius: 2,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
                                     ),
                                   ),
                                 ),
@@ -626,8 +672,8 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
                         if (!isKeyboardVisible || isWebPlatform)
                           Padding(
                             padding: EdgeInsets.only(
-                                top: isSmallDevice ? 12 : 20,
-                                bottom: isSmallDevice ? 8 : 16
+                              top: isSmallDevice ? 12 : 20,
+                              bottom: isSmallDevice ? 8 : 16,
                             ),
                             child: Wrap(
                               spacing: isSmallDevice ? 8 : 16,
@@ -669,19 +715,20 @@ class _SimpleUsernamePageState extends State<SimpleUsernamePage> with SingleTick
     );
   }
 
-  Widget _gameFeatureItem(String imagePath, String text, {bool isSmallDevice = false}) {
+  Widget _gameFeatureItem(
+    String imagePath,
+    String text, {
+    bool isSmallDevice = false,
+  }) {
     return Container(
       padding: EdgeInsets.symmetric(
-          horizontal: isSmallDevice ? 8 : 12,
-          vertical: isSmallDevice ? 6 : 8
+        horizontal: isSmallDevice ? 8 : 12,
+        vertical: isSmallDevice ? 6 : 8,
       ),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.6),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Color(0xFF7AC74C).withOpacity(0.5),
-          width: 1,
-        ),
+        border: Border.all(color: Color(0xFF7AC74C).withOpacity(0.5), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
