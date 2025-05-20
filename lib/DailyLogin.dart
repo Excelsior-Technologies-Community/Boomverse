@@ -119,6 +119,64 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     _timer.cancel();
     super.dispose();
   }
+  Future<void> resetStreak() async {
+    try {
+      print('Resetting streak due to missed days');
+      // Clear in-memory tracking of claimed days
+      _claimedDaysMap.clear();
+
+      if (!_deviceService.isInitialized) {
+        await _deviceService.initDeviceId();
+      }
+      final deviceId = _deviceService.sanitizedDeviceId;
+
+      // Get current user data to preserve coins
+      final DatabaseReference userRef = FirebaseDatabase.instance
+          .ref()
+          .child('users')
+          .child(deviceId);
+
+      final DatabaseEvent event = await userRef.once();
+      final DataSnapshot snapshot = event.snapshot;
+
+      if (snapshot.exists) {
+        final data = snapshot.value as Map<dynamic, dynamic>;
+        final userData = Map<String, dynamic>.from(data);
+
+        // Keep coins but reset streak data
+        final currentCoins = userData['coins'] ?? 0;
+        final username = userData['username'] as String? ?? 'Player';
+
+        // Reset streak but keep other data
+        Map<String, dynamic> updates = {
+          'coins': currentCoins,
+          'streakCount': 0, // Reset to 0 to indicate start of new streak
+          'lastClaimDate': null,
+          'lastClaimedDay': null,
+        };
+
+        await userRef.update(updates);
+
+        // Update shared preferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('streakCount', 0);
+        await prefs.remove('lastClaimDate');
+        await prefs.remove('lastClaimedDay');
+
+        print('Streak reset successfully due to missed days');
+      }
+
+      // Update local state
+      setState(() {
+        streakCount = 0;
+        lastClaimDate = null;
+        _lastClaimedDay = null;
+        _updateRemainingTime();
+      });
+    } catch (e) {
+      print('Error resetting streak: $e');
+    }
+  }
 
   Future<void> _loadDailyLoginData() async {
     try {
@@ -150,6 +208,34 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         print('User data found in database');
         final data = snapshot.value as Map<dynamic, dynamic>;
         final userData = Map<String, dynamic>.from(data);
+
+        // Check if streak should be reset due to missing days
+        bool shouldResetStreak = false;
+        if (userData['lastClaimDate'] != null) {
+          try {
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final lastClaim = DateTime.parse(userData['lastClaimDate']);
+            final lastClaimDay = DateTime(
+              lastClaim.year,
+              lastClaim.month,
+              lastClaim.day,
+            );
+
+            // If more than 1 day has passed, we should reset the streak
+            if (today.difference(lastClaimDay).inDays > 1) {
+              print('Missed more than 1 day since last claim, resetting streak');
+              shouldResetStreak = true;
+            }
+          } catch (e) {
+            print('Error checking streak reset: $e');
+          }
+        }
+
+        if (shouldResetStreak) {
+          await resetStreak();
+          return; // Early return as we've reset everything
+        }
 
         setState(() {
           streakCount = userData['streakCount'] ?? 0;
@@ -218,8 +304,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         setState(() {
           streakCount = 0;
           lastClaimDate = null;
-          _lastClaimedDay =
-              null; // Reset this to ensure rewards aren't auto-collected
+          _lastClaimedDay = null; // Reset this to ensure rewards aren't auto-collected
           _updateRemainingTime();
         });
       }
@@ -236,14 +321,12 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       setState(() {
         streakCount = 0;
         lastClaimDate = null;
-        _lastClaimedDay =
-            null; // Reset this to ensure rewards aren't auto-collected
+        _lastClaimedDay = null; // Reset this to ensure rewards aren't auto-collected
         _updateRemainingTime();
       });
     }
     _startTimer();
   }
-
   Future<void> _verifyDatabaseConnection() async {
     try {
       print('Verifying database connection...');
@@ -298,16 +381,44 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
     try {
       final lastClaim = DateTime.parse(lastClaimDate!);
+      final lastClaimDay = DateTime(
+        lastClaim.year,
+        lastClaim.month,
+        lastClaim.day,
+      );
+      final today = DateTime(now.year, now.month, now.day);
+
+      // Calculate days difference
+      final daysDifference = today.difference(lastClaimDay).inDays;
+      print('Timer check - Days since last claim: $daysDifference');
+
+      // If more than 1 day has passed since last claim, reset timer
+      if (daysDifference > 1) {
+        print('Timer reset - More than 1 day passed');
+        _remainingTime = "00:00:00";
+        return;
+      }
+
+      // If exactly 1 day has passed, allow immediate claim
+      if (daysDifference == 1) {
+        print('Timer reset - Exactly 1 day passed');
+        _remainingTime = "00:00:00";
+        return;
+      }
+
+      // If same day, calculate remaining time until next claim
       final nextClaimTime = lastClaim.add(Duration(hours: 24));
       final difference = nextClaimTime.difference(now);
 
       if (difference.isNegative) {
+        print('Timer reset - Negative time difference');
         _remainingTime = "00:00:00";
       } else {
         _remainingTime = _formatDuration(difference);
+        print('Timer update - Remaining time: $_remainingTime');
       }
     } catch (e) {
-      print('Error parsing lastClaimDate: $e');
+      print('Error in _updateRemainingTime: $e');
       _remainingTime = "00:00:00";
     }
   }
@@ -339,33 +450,38 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       // If already claimed today, no more claims available
       if (lastClaimDay == today && _lastClaimedDay != null) {
         print('Already claimed day $_lastClaimedDay today, canClaim=false');
-        return {'canClaim': false, 'day': streakCount};
+        return {'canClaim': false, 'day': _lastClaimedDay};
       }
-      // If 24+ hours have passed since last claim, reset to Day 1
-      else if (now.difference(lastClaim).inHours >= 24) {
-        print('24+ hours since last claim, reset to Day 1, canClaim=true');
+
+      // Calculate days difference between last claim and today
+      final daysDifference = today.difference(lastClaimDay).inDays;
+
+      // If more than 1 day has passed since last claim, reset streak
+      if (daysDifference > 1) {
+        print('Missed $daysDifference days, resetting streak to Day 1');
         return {'canClaim': true, 'day': 1};
       }
-      // If it's the next calendar day, proceed to next day in streak
-      else if (today.difference(lastClaimDay).inDays == 1) {
+      // If exactly 1 day has passed, continue streak
+      else if (daysDifference == 1) {
         final nextDay = streakCount >= 7 ? 1 : streakCount + 1;
-        print('Next calendar day, proceed to day $nextDay, canClaim=true');
+        print('Continuing streak to day $nextDay');
         return {'canClaim': true, 'day': nextDay};
       }
-      // If more than 1 day has been missed, reset to Day 1
-      else if (today.difference(lastClaimDay).inDays > 1) {
-        print('Missed more than 1 day, reset to Day 1, canClaim=true');
+      // If less than 24 hours have passed since last claim
+      else if (now.difference(lastClaim).inHours < 24) {
+        print('Less than 24 hours since last claim, cannot claim yet');
+        return {'canClaim': false, 'day': _lastClaimedDay ?? streakCount};
+      }
+      // If same day but 24+ hours have passed (edge case), allow claim
+      else {
+        print('Same day but 24+ hours passed, allowing claim');
         return {'canClaim': true, 'day': 1};
       }
-      // Default fallback - allow claiming Day 1
-      print('Default fallback, Day 1, canClaim=true');
-      return {'canClaim': true, 'day': 1};
     } catch (e) {
       print('Error in getDailyLoginStatus: $e');
       return {'canClaim': true, 'day': 1};
     }
   }
-
   List<Map<String, dynamic>> getDaysList() {
     final status = getDailyLoginStatus();
     final canClaim = status['canClaim'];
@@ -466,54 +582,38 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
   Future<void> _claimReward(String deviceId, int reward, int dayToClaim) async {
     try {
-      print(
-        'CLAIM ATTEMPT: Trying to claim day $dayToClaim, reward $reward, _claimedDaysMap=$_claimedDaysMap',
-      );
+      print('CLAIM ATTEMPT: Trying to claim day $dayToClaim, reward $reward');
 
-      // First check if there's already a claim in progress to prevent double-processing
+      // First check if there's already a claim in progress
       if (_claimedDaysMap.containsKey(dayToClaim) &&
           _claimedDaysMap[dayToClaim] == true) {
-        print(
-          'WARNING: Day $dayToClaim already marked as claimed in _claimedDaysMap',
-        );
-
-        // Before rejecting, verify whether this claim was saved to persistent storage
-        final prefs = await SharedPreferences.getInstance();
-        final savedClaimedDay = prefs.getInt('lastClaimedDay');
-        final savedLastClaimDate = prefs.getString('lastClaimDate');
-
-        print(
-          'Checking SharedPrefs: savedClaimedDay=$savedClaimedDay, savedLastClaimDate=$savedLastClaimDate',
-        );
-
-        // If there's no saved claim in SharedPreferences, allow the claim to proceed
-        // This handles cases where UI shows claimed but data wasn't saved
-        if (savedClaimedDay != dayToClaim) {
-          print(
-            'SharedPrefs disagrees with local state - allowing claim to proceed',
+        print('WARNING: Day $dayToClaim already marked as claimed');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('You have already claimed this reward!'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
           );
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('You have already claimed this reward!'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-          return;
         }
+        return;
       }
 
-      // Set the day as attempting to claim (not fully claimed yet)
-      // We'll confirm the claim after database update
+      // Set the day as attempting to claim
       setState(() {
-        _claimedDaysMap[dayToClaim] =
-            false; // Mark as "in progress" (not confirmed yet)
+        _claimedDaysMap[dayToClaim] = false;
       });
 
-      print('Starting claim process for day $dayToClaim with reward $reward');
+      // Check if this is a streak reset (day 1 after previously having a streak)
+      bool isStreakReset = dayToClaim == 1 && streakCount > 1;
+
+      if (isStreakReset) {
+        print('Detecting streak reset to Day 1. Previous streak: $streakCount');
+        // Clear the claimed days map to start fresh
+        _claimedDaysMap.clear();
+        _claimedDaysMap[dayToClaim] = false; // Mark current day as in progress again
+      }
 
       // Ensure device service is initialized
       if (!_deviceService.isInitialized) {
@@ -524,89 +624,29 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           .ref()
           .child('users')
           .child(sanitizedDeviceId);
-      print('Claiming reward for device: $sanitizedDeviceId');
 
-      // Verify database connection before proceeding
+      // Verify database connection
       try {
         await _verifyDatabaseConnection();
       } catch (e) {
         print('Database connection error: $e');
-        // Reset claiming state if database connection fails
         setState(() {
           _claimedDaysMap.remove(dayToClaim);
         });
         throw Exception('Unable to connect to database: $e');
       }
 
-      // Check the current claim status before proceeding with database operations
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-
-      // Only check for conflicts if we have a previous claim date
-      if (lastClaimDate != null) {
-        try {
-          final lastClaim = DateTime.parse(lastClaimDate!);
-          final lastClaimDay = DateTime(
-            lastClaim.year,
-            lastClaim.month,
-            lastClaim.day,
-          );
-
-          // Check if already claimed TODAY but a DIFFERENT reward
-          if (lastClaimDay == today &&
-              _lastClaimedDay != null &&
-              _lastClaimedDay != dayToClaim) {
-            print(
-              'ERROR: Different reward already claimed today: $_lastClaimedDay',
-            );
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'You have already claimed a different reward today!',
-                  ),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-
-            // Reset the state since we couldn't claim
-            setState(() {
-              _claimedDaysMap.remove(dayToClaim);
-            });
-            return;
-          }
-        } catch (e) {
-          print('Error parsing date: $e');
-        }
-      }
-
-      // Get current user data from database
-      DatabaseEvent event;
-      try {
-        event = await userRef.once();
-      } catch (e) {
-        print('ERROR reading database: $e');
-        // Reset claiming state
-        setState(() {
-          _claimedDaysMap.remove(dayToClaim);
-        });
-        throw Exception('Database read error: $e');
-      }
-
+      // Get current user data
+      final DatabaseEvent event = await userRef.once();
       final DataSnapshot snapshot = event.snapshot;
-      print('Got database snapshot, exists: ${snapshot.exists}');
-
       final String todayDateString = DateTime.now().toIso8601String();
       bool updateSuccess = false;
 
       if (snapshot.exists) {
         final data = snapshot.value as Map<dynamic, dynamic>;
         final userData = Map<String, dynamic>.from(data);
-        print('User data: $userData');
 
-        // Carefully extract the current coin count
+        // Get current coins
         int currentCoins = 0;
         if (userData.containsKey('coins')) {
           if (userData['coins'] is int) {
@@ -616,22 +656,21 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           }
         }
 
-        print('Current coins: $currentCoins, adding reward: $reward');
         final int newCoins = currentCoins + reward;
         final username = userData['username'] as String? ?? 'Player';
 
+        // Prepare updates
         Map<String, dynamic> updates = {
           'coins': newCoins,
           'streakCount': dayToClaim,
           'lastClaimDate': todayDateString,
-          'lastClaimedDay': dayToClaim, // Store the claimed day in the database
+          'lastClaimedDay': dayToClaim,
         };
 
-        print('Updating database with: $updates');
+        // Update database with retries
         int retryCount = 0;
         const maxRetries = 3;
 
-        // Try to update the database with retries
         while (!updateSuccess && retryCount < maxRetries) {
           try {
             await userRef.update(updates);
@@ -641,7 +680,6 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             retryCount++;
             print('Error updating database (attempt $retryCount): $e');
             if (retryCount >= maxRetries) {
-              // Reset claiming state if all retries fail
               setState(() {
                 _claimedDaysMap.remove(dayToClaim);
               });
@@ -653,10 +691,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           }
         }
 
-        // Only update leaderboard if database update succeeded
+        // Update leaderboard if database update succeeded
         if (updateSuccess) {
           try {
-            print('Updating leaderboard');
             final leaderboardRef = FirebaseDatabase.instance.ref(
               'leaderboard/$username',
             );
@@ -665,7 +702,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
             if (leaderboardSnapshot.exists) {
               final leaderboardData =
-                  leaderboardSnapshot.value as Map<dynamic, dynamic>;
+              leaderboardSnapshot.value as Map<dynamic, dynamic>;
               if (leaderboardData.containsKey('coins') &&
                   leaderboardData['coins'] is int &&
                   leaderboardData['coins'] > newCoins) {
@@ -677,31 +714,25 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
               'coins': leaderboardCoins,
               'name': username,
             });
-            print('Leaderboard updated with coins: $leaderboardCoins');
           } catch (e) {
             print('Error updating leaderboard: $e');
-            // Continue even if leaderboard update fails
           }
         }
 
-        // Update local storage if database update succeeded
+        // Update local storage
         if (updateSuccess) {
           try {
-            print('Updating SharedPreferences');
             final prefs = await SharedPreferences.getInstance();
             await prefs.setInt('coins', newCoins);
             await prefs.setInt('streakCount', dayToClaim);
             await prefs.setString('lastClaimDate', todayDateString);
             await prefs.setInt('lastClaimedDay', dayToClaim);
-            print('SharedPreferences updated successfully');
           } catch (e) {
             print('Error updating SharedPreferences: $e');
-            // Continue even if SharedPreferences update fails
           }
         }
       } else {
-        // Create new user record if it doesn't exist
-        print('User does not exist, creating new record');
+        // Create new user record
         final prefs = await SharedPreferences.getInstance();
         final username = prefs.getString('username') ?? 'Player';
 
@@ -718,21 +749,17 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           'treasure': 0,
         };
 
-        print('Creating new user data: $initialUserData');
+        // Create user with retries
         int retryCount = 0;
         const maxRetries = 3;
 
-        // Try to create the user with retries
         while (!updateSuccess && retryCount < maxRetries) {
           try {
             await userRef.set(initialUserData);
             updateSuccess = true;
-            print('New user data created successfully');
           } catch (e) {
             retryCount++;
-            print('Error creating user data (attempt $retryCount): $e');
             if (retryCount >= maxRetries) {
-              // Reset claiming state if all retries fail
               setState(() {
                 _claimedDaysMap.remove(dayToClaim);
               });
@@ -744,64 +771,60 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           }
         }
 
-        // Only update local storage if user creation succeeded
+        // Update local storage for new user
         if (updateSuccess) {
           try {
-            print('Updating SharedPreferences for new user');
             await prefs.setInt('coins', reward);
             await prefs.setInt('streakCount', dayToClaim);
             await prefs.setString('lastClaimDate', todayDateString);
             await prefs.setInt('lastClaimedDay', dayToClaim);
-            print('SharedPreferences updated successfully for new user');
           } catch (e) {
             print('Error updating SharedPreferences for new user: $e');
-            // Continue even if SharedPreferences update fails
           }
 
+          // Create leaderboard entry
           try {
-            print('Creating leaderboard entry for new user');
             final leaderboardRef = FirebaseDatabase.instance.ref(
               'leaderboard/$username',
             );
             await leaderboardRef.set({'coins': reward, 'name': username});
-            print('Leaderboard created for new user');
           } catch (e) {
             print('Error creating leaderboard entry: $e');
-            // Continue even if leaderboard update fails
           }
         }
       }
 
-      // Only show success message and update UI if the database update succeeded
-      if (updateSuccess) {
-        // Now finally mark the day as claimed in our state
-        if (mounted) {
-          setState(() {
-            streakCount = dayToClaim;
-            lastClaimDate = todayDateString;
-            _updateRemainingTime();
-            _lastClaimedDay = dayToClaim;
-            _claimedDaysMap[dayToClaim] = true; // Now truly mark as claimed
-            print(
-              'Day $dayToClaim marked as claimed in claimedDaysMap after successful DB update',
-            );
-          });
-
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text('Day $dayToClaim reward claimed! +$reward coins'),
-                ],
-              ),
-              duration: Duration(seconds: 2),
-              backgroundColor: Colors.green.shade700,
-            ),
-          );
+      // Update UI if successful
+      if (updateSuccess && mounted) {
+        // If this was a streak reset, make sure in-memory state is cleaned
+        if (isStreakReset) {
+          _claimedDaysMap.clear();
         }
+
+        setState(() {
+          streakCount = dayToClaim;
+          lastClaimDate = todayDateString;
+          _lastClaimedDay = dayToClaim;
+          _claimedDaysMap[dayToClaim] = true;
+          _updateRemainingTime();
+        });
+
+        // Show success message with streak reset notification if applicable
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text(isStreakReset
+                    ? 'Streak reset! Day $dayToClaim reward claimed! +$reward coins'
+                    : 'Day $dayToClaim reward claimed! +$reward coins'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
 
         _claimAnimationController.forward(from: 0.0).then((_) {
           _claimAnimationController.reverse();
@@ -811,33 +834,21 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
           _shimmerController.forward(from: 0.0);
         });
 
-        // Force a UI refresh to ensure all widgets update
-        if (mounted) {
-          setState(() {});
-        }
-
-        // Load updated data to ensure everything is in sync
+        // Force UI refresh and reload data
+        setState(() {});
         await _loadDailyLoginData();
       } else {
-        // If we get here without updateSuccess being true, something went wrong
-        print('ERROR: Database update failed in an unexpected way');
-        // Reset the claiming state
         setState(() {
           _claimedDaysMap.remove(dayToClaim);
         });
         throw Exception('Database update failed in an unexpected way');
       }
-
-      return Future.value();
     } catch (e) {
       print('ERROR claiming reward: $e');
-
-      // Reset the claiming state
       setState(() {
         _claimedDaysMap.remove(dayToClaim);
       });
 
-      // Show error message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -851,7 +862,6 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       return Future.error('Failed to claim reward: $e');
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
