@@ -19,6 +19,8 @@ import '../services/audio_service.dart';
 import '../services/device_service.dart';
 import 'unified_joystick.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:Boomverse/services/analytics_service.dart';
 
 class GameScreen extends StatefulWidget {
   final int level;
@@ -82,6 +84,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // Walk sound cooldown
   int _walkSoundCooldown = 0;
 
+  final AnalyticsService _analytics = AnalyticsService();
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +110,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     // Start game loop at 60fps
     _gameTimer = Timer.periodic(const Duration(milliseconds: 16), _gameLoop);
+
+    _analytics.logLevelStart(widget.level);
   }
 
   Future<void> _initAudio() async {
@@ -522,6 +528,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               ),
         ),
       );
+
+      _onLevelComplete(player.coins, stars);
     } else {
       // Play game over sound
       _audioService.playGameOver();
@@ -537,6 +545,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               ),
         ),
       );
+
+      _onGameOver(player.coins);
     }
   }
 
@@ -558,107 +568,121 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> saveGameResult(
-      int levelCompleted, int stars, int coinsCollected) async {
+    int levelCompleted,
+    int stars,
+    int coinsCollected,
+  ) async {
     final deviceService = DeviceService();
-    
+
     // Make sure device ID is initialized
     if (!deviceService.isInitialized) {
       await deviceService.initDeviceId();
     }
-    
+
     try {
       // Get sanitized device ID for Firebase paths
       final sanitizedDeviceId = deviceService.sanitizedDeviceId;
-      print("Saving game result for device ID: $sanitizedDeviceId, Level: $levelCompleted, Stars: $stars, Coins: $coinsCollected");
-      
+      print(
+        "Saving game result for device ID: $sanitizedDeviceId, Level: $levelCompleted, Stars: $stars, Coins: $coinsCollected",
+      );
+
       final userRef = FirebaseDatabase.instance.ref('users/$sanitizedDeviceId');
-      
+
       // Get current user data
       final snapshot = await userRef.get();
       if (snapshot.exists) {
         // Update level progression logic
         final data = snapshot.value as Map<dynamic, dynamic>;
         final userData = Map<String, dynamic>.from(data);
-        
+
         // Get current values
         final username = userData['username'] as String? ?? 'Player';
-        final currentCoins = userData['coins'] is int 
-            ? userData['coins'] as int 
-            : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
-        final currentLevel = userData['level'] is int 
-            ? userData['level'] as int 
-            : int.tryParse(userData['level']?.toString() ?? '1') ?? 1;
+        final currentCoins =
+            userData['coins'] is int
+                ? userData['coins'] as int
+                : int.tryParse(userData['coins']?.toString() ?? '0') ?? 0;
+        final currentLevel =
+            userData['level'] is int
+                ? userData['level'] as int
+                : int.tryParse(userData['level']?.toString() ?? '1') ?? 1;
         final newCoins = currentCoins + coinsCollected;
-        
+
         // Get levels array to update stars
         var levelsArray = List<int>.filled(100, 0);
         if (userData.containsKey('levels') && userData['levels'] is List) {
           final dynamicList = userData['levels'] as List<dynamic>;
           levelsArray = List<int>.filled(100, 0);
-          
-          for (int i = 0; i < dynamicList.length && i < levelsArray.length; i++) {
+
+          for (
+            int i = 0;
+            i < dynamicList.length && i < levelsArray.length;
+            i++
+          ) {
             if (dynamicList[i] != null) {
-              levelsArray[i] = dynamicList[i] is int 
-                  ? dynamicList[i] as int 
-                  : int.tryParse(dynamicList[i]?.toString() ?? '0') ?? 0;
+              levelsArray[i] =
+                  dynamicList[i] is int
+                      ? dynamicList[i] as int
+                      : int.tryParse(dynamicList[i]?.toString() ?? '0') ?? 0;
             }
           }
         }
-        
+
         // Update the stars for this level if better than previous
         if (levelCompleted < levelsArray.length) {
-          levelsArray[levelCompleted] = stars > levelsArray[levelCompleted] 
-              ? stars 
-              : levelsArray[levelCompleted];
+          levelsArray[levelCompleted] =
+              stars > levelsArray[levelCompleted]
+                  ? stars
+                  : levelsArray[levelCompleted];
         }
-        
+
         // Check if next level should be unlocked
         int newHighestLevel = currentLevel;
         if (stars > 0 && levelCompleted + 1 > currentLevel) {
           newHighestLevel = levelCompleted + 1;
         }
-        
+
         // Create update map
-        final updates = {
-          'coins': newCoins,
-          'level': newHighestLevel,
-        };
-        
+        final updates = {'coins': newCoins, 'level': newHighestLevel};
+
         // Create a separate update for the levels array since it needs a different structure
         await userRef.child('levels').set(levelsArray);
-        
+
         // Update user data (without levels field)
         await userRef.update(updates);
-        print("Updated user data with new coins: $newCoins, level: $newHighestLevel");
-        
+        print(
+          "Updated user data with new coins: $newCoins, level: $newHighestLevel",
+        );
+
         // Update leaderboard
-        final leaderboardRef = FirebaseDatabase.instance.ref('leaderboard/$username');
-        
+        final leaderboardRef = FirebaseDatabase.instance.ref(
+          'leaderboard/$username',
+        );
+
         // Get existing leaderboard data first
         final leaderboardSnapshot = await leaderboardRef.get();
         int leaderboardCoins = newCoins;
-        
+
         if (leaderboardSnapshot.exists) {
-          final leaderboardData = leaderboardSnapshot.value as Map<dynamic, dynamic>;
+          final leaderboardData =
+              leaderboardSnapshot.value as Map<dynamic, dynamic>;
           // Only update if current coins are higher than leaderboard
-          if (leaderboardData.containsKey('coins') && 
-              leaderboardData['coins'] is int && 
+          if (leaderboardData.containsKey('coins') &&
+              leaderboardData['coins'] is int &&
               leaderboardData['coins'] > newCoins) {
             leaderboardCoins = leaderboardData['coins'];
           }
         }
-        
-        await leaderboardRef.set({
-          'coins': leaderboardCoins,
-          'name': username
-        });
-        print("Updated leaderboard for $username with coins: $leaderboardCoins");
-        
+
+        await leaderboardRef.set({'coins': leaderboardCoins, 'name': username});
+        print(
+          "Updated leaderboard for $username with coins: $leaderboardCoins",
+        );
+
         // Save to SharedPreferences for quick access
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt('coins', newCoins);
         await prefs.setInt('highestLevel', newHighestLevel);
-        
+
         print("Game result saved successfully!");
       } else {
         print("User data not found, cannot save game result");
@@ -762,6 +786,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (_controlType == GameConstants.controlTypeKeyboard) {
       _keyboardControls.focusNode.requestFocus();
     }
+  }
+
+  void _onGameOver(int score) {
+    _analytics.logLevelFail(widget.level, score);
+  }
+
+  void _onLevelComplete(int score, int stars) {
+    _analytics.logLevelComplete(widget.level, score, stars);
   }
 
   @override
@@ -1464,12 +1496,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Base reward is 10 coins per star, plus level bonus
     int baseReward = stars * 10;
     int levelBonus = widget.level * 5;
-    
+
     // Scale up rewards for higher levels
     if (widget.level > 10) {
       levelBonus *= 2;
     }
-    
+
     return baseReward + levelBonus;
   }
 }

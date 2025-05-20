@@ -11,6 +11,10 @@ import 'SimpleUsername.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/audio_service.dart';
 import 'services/device_service.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:Boomverse/services/analytics_service.dart';
+import 'package:Boomverse/game/game_screen.dart';
+import 'package:Boomverse/DailyLogin.dart';
 
 class HomePage extends StatefulWidget {
   final String username;
@@ -20,9 +24,12 @@ class HomePage extends StatefulWidget {
   _HomePageState createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final DeviceService _deviceService = DeviceService();
   final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final AnalyticsService _analytics = AnalyticsService();
+  final AudioService _audioService = AudioService();
 
   int coins = 0;
   int keys = 0;
@@ -34,15 +41,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late Animation<double> _buttonScale;
   bool _dataMigrated = false;
 
-  // Audio service
-  final AudioService _audioService = AudioService();
-
   // Stream subscription for real-time updates
   StreamSubscription<DatabaseEvent>? _userDataSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _buttonController = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
@@ -53,8 +58,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // Initialize audio and start background music
     _initAudio();
-
     _initData();
+    _analytics.logHomeView();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _buttonController.dispose();
+    _userDataSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _audioService.resumeBGM();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Resume BGM when the screen is focused
+    _audioService.resumeBGM();
   }
 
   Future<void> _initAudio() async {
@@ -372,13 +399,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await prefs.setString('username', widget.username);
   }
 
-  @override
-  void dispose() {
-    _buttonController.dispose();
-    _userDataSubscription?.cancel();
-    super.dispose();
-  }
-
   Widget _buildDialogButton(String text, VoidCallback onTap) {
     return GestureDetector(
       onTap: () {
@@ -545,12 +565,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           _audioService
                               .playButtonClick(); // Play button click sound
                           HapticFeedback.mediumImpact();
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const LevelSelectionPage(),
-                            ),
-                          );
+                          _navigateToGame();
                         }),
                         const SizedBox(width: 20),
                         _buildLockedMultiplayerButton(context, buttonW),
@@ -564,30 +579,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           _audioService
                               .playButtonClick(); // Play button click sound
                           HapticFeedback.mediumImpact();
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => LeaderboardScreen(),
-                            ),
-                          );
+                          _navigateToLeaderboard();
                         }),
                         const SizedBox(width: 20),
                         _buildMenuButton(context, 'DAILY REWARD', buttonW, () {
                           _audioService
                               .playButtonClick(); // Play button click sound
                           HapticFeedback.mediumImpact();
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => DailyLoginScreen(),
-                            ),
-                          ).then((result) {
-                            if (result != null && result is int) {
-                              setState(() {
-                                coins = result;
-                              });
-                            }
-                          });
+                          _navigateToDailyLogin();
                         }),
                       ],
                     ),
@@ -1070,5 +1069,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ],
     );
+  }
+
+  void _navigateToGame() {
+    _analytics.logGameStart();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LevelSelectionPage()),
+    ).then((_) {
+      // Resume BGM when returning to home screen
+      _audioService.resumeBGM();
+    });
+  }
+
+  void _navigateToDailyLogin() {
+    _analytics.logDailyLoginNavigate();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const DailyLoginScreen()),
+    ).then((result) {
+      if (result != null && result is int) {
+        setState(() {
+          coins = result;
+        });
+      }
+      // Resume BGM when returning to home screen
+      _audioService.resumeBGM();
+    });
+  }
+
+  void _navigateToLeaderboard() {
+    _analytics.logLeaderboardNavigate();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+    ).then((_) {
+      // Resume BGM when returning to home screen
+      _audioService.resumeBGM();
+    });
   }
 }

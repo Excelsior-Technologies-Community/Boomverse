@@ -54,9 +54,12 @@ class AudioService {
       print('Background music player state changed: $state');
     });
 
+    // Set up completion handler for looping
     _bgmPlayer.onPlayerComplete.listen((_) {
       print('Background music completed, restarting...');
-      playBGM();
+      if (_bgmEnabled) {
+        playBGM();
+      }
     });
   }
 
@@ -79,18 +82,14 @@ class AudioService {
     try {
       print('Attempting to play background music: $bgMusic');
 
-      // First check if we need to load the source
-      if (_bgmPlayer.source == null) {
-        print('Loading background music source...');
-        await _bgmPlayer.setSource(AssetSource(bgMusic));
-      }
-
       // Stop any existing playback
       await _bgmPlayer.stop();
 
-      // Start playing
-      print('Starting background music playback...');
-      await _bgmPlayer.resume();
+      // Set loop mode before loading source
+      await _bgmPlayer.setReleaseMode(ReleaseMode.loop);
+
+      // Load and play the source
+      await _bgmPlayer.play(AssetSource(bgMusic));
       await _bgmPlayer.setVolume(_bgmVolume);
 
       print('Background music started successfully');
@@ -99,8 +98,8 @@ class AudioService {
       // Try to recover by reloading the source
       try {
         print('Attempting to recover by reloading source...');
-        await _bgmPlayer.setSource(AssetSource(bgMusic));
-        await _bgmPlayer.resume();
+        await _bgmPlayer.setReleaseMode(ReleaseMode.loop);
+        await _bgmPlayer.play(AssetSource(bgMusic));
         await _bgmPlayer.setVolume(_bgmVolume);
       } catch (recoveryError) {
         print("Failed to recover background music: $recoveryError");
@@ -114,7 +113,8 @@ class AudioService {
     try {
       // Stop any existing BGM first
       await _bgmPlayer.stop();
-      // Play the game music
+      // Play the game music with loop mode
+      await _bgmPlayer.setReleaseMode(ReleaseMode.loop);
       await _bgmPlayer.play(AssetSource(gameMusic));
       await _bgmPlayer.setVolume(_bgmVolume);
     } catch (e) {
@@ -134,22 +134,31 @@ class AudioService {
     if (!_bgmEnabled) return;
 
     try {
+      print('Attempting to resume background music...');
       // First check if player is already playing
       PlayerState state = _bgmPlayer.state;
+      print('Current player state: $state');
 
       if (state == PlayerState.paused) {
-        // Resume if paused
+        print('Resuming paused music...');
         await _bgmPlayer.resume();
       } else if (state == PlayerState.stopped ||
           state == PlayerState.completed) {
-        // Restart if stopped
-        await _bgmPlayer.play(AssetSource(bgMusic));
+        print('Music was stopped, restarting...');
+        await playBGM();
+      } else if (state == PlayerState.playing) {
+        print('Music is already playing, ensuring volume...');
+        await _bgmPlayer.setVolume(_bgmVolume);
       }
 
       // Ensure volume is set correctly
       await _bgmPlayer.setVolume(_bgmVolume);
+      print('Background music resumed successfully');
     } catch (e) {
       print("Error resuming background music: $e");
+      // If there's an error, try to restart the music
+      print('Attempting to restart music after error...');
+      await playBGM();
     }
   }
 

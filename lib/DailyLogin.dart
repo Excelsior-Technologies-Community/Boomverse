@@ -5,6 +5,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'services/device_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:Boomverse/services/analytics_service.dart';
 
 // Helper extension to replace all withValues instances
 extension ColorHelpers on Color {
@@ -25,6 +27,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
   late Timer _timer;
   String _remainingTime = "24:00:00";
   final DeviceService _deviceService = DeviceService();
+  final AnalyticsService _analytics = AnalyticsService();
 
   late AnimationController _frameController;
   late AnimationController _bgParticlesController;
@@ -39,6 +42,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
   // Map to track claimed days during this session
   final Map<int, bool> _claimedDaysMap = {};
+  bool _isClaiming = false;
 
   @override
   void initState() {
@@ -102,6 +106,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
     _frameController.forward();
     _loadDailyLoginData();
+    _analytics.logDailyLoginView();
 
     // If we have SharedPreferences saved, load them immediately to prevent UI flicker
     _loadFromSharedPrefs();
@@ -119,6 +124,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
     _timer.cancel();
     super.dispose();
   }
+
   Future<void> resetStreak() async {
     try {
       print('Resetting streak due to missed days');
@@ -164,6 +170,13 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         await prefs.remove('lastClaimedDay');
 
         print('Streak reset successfully due to missed days');
+
+        await _analytics.logStreakReset(streakCount, 'missed_days');
+        await _analytics.setUserProperties(
+          totalCoins: currentCoins,
+          highestStreak: 0,
+          totalRewardsClaimed: 0,
+        );
       }
 
       // Update local state
@@ -175,6 +188,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       });
     } catch (e) {
       print('Error resetting streak: $e');
+      await _analytics.logError('streak_reset', e.toString());
     }
   }
 
@@ -224,7 +238,9 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
             // If more than 1 day has passed, we should reset the streak
             if (today.difference(lastClaimDay).inDays > 1) {
-              print('Missed more than 1 day since last claim, resetting streak');
+              print(
+                'Missed more than 1 day since last claim, resetting streak',
+              );
               shouldResetStreak = true;
             }
           } catch (e) {
@@ -304,7 +320,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         setState(() {
           streakCount = 0;
           lastClaimDate = null;
-          _lastClaimedDay = null; // Reset this to ensure rewards aren't auto-collected
+          _lastClaimedDay =
+              null; // Reset this to ensure rewards aren't auto-collected
           _updateRemainingTime();
         });
       }
@@ -318,15 +335,18 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       }
     } catch (e) {
       print('Error in _loadDailyLoginData: $e');
+      await _analytics.logError('daily_login_load', e.toString());
       setState(() {
         streakCount = 0;
         lastClaimDate = null;
-        _lastClaimedDay = null; // Reset this to ensure rewards aren't auto-collected
+        _lastClaimedDay =
+            null; // Reset this to ensure rewards aren't auto-collected
         _updateRemainingTime();
       });
     }
     _startTimer();
   }
+
   Future<void> _verifyDatabaseConnection() async {
     try {
       print('Verifying database connection...');
@@ -482,6 +502,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
       return {'canClaim': true, 'day': 1};
     }
   }
+
   List<Map<String, dynamic>> getDaysList() {
     final status = getDailyLoginStatus();
     final canClaim = status['canClaim'];
@@ -581,6 +602,15 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
   }
 
   Future<void> _claimReward(String deviceId, int reward, int dayToClaim) async {
+    if (_isClaiming) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please wait...')));
+      return;
+    }
+
+    setState(() => _isClaiming = true);
+
     try {
       print('CLAIM ATTEMPT: Trying to claim day $dayToClaim, reward $reward');
 
@@ -612,7 +642,8 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         print('Detecting streak reset to Day 1. Previous streak: $streakCount');
         // Clear the claimed days map to start fresh
         _claimedDaysMap.clear();
-        _claimedDaysMap[dayToClaim] = false; // Mark current day as in progress again
+        _claimedDaysMap[dayToClaim] =
+            false; // Mark current day as in progress again
       }
 
       // Ensure device service is initialized
@@ -702,7 +733,7 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
 
             if (leaderboardSnapshot.exists) {
               final leaderboardData =
-              leaderboardSnapshot.value as Map<dynamic, dynamic>;
+                  leaderboardSnapshot.value as Map<dynamic, dynamic>;
               if (leaderboardData.containsKey('coins') &&
                   leaderboardData['coins'] is int &&
                   leaderboardData['coins'] > newCoins) {
@@ -731,6 +762,21 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
             print('Error updating SharedPreferences: $e');
           }
         }
+
+        // Log successful claim
+        await _analytics.logDailyRewardClaim(
+          dayToClaim,
+          reward,
+          streakCount,
+          isStreakReset,
+        );
+
+        // Update user properties
+        await _analytics.setUserProperties(
+          totalCoins: newCoins,
+          highestStreak: streakCount,
+          totalRewardsClaimed: _claimedDaysMap.length,
+        );
       } else {
         // Create new user record
         final prefs = await SharedPreferences.getInstance();
@@ -816,9 +862,11 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
               children: [
                 Icon(Icons.check_circle, color: Colors.white),
                 SizedBox(width: 12),
-                Text(isStreakReset
-                    ? 'Streak reset! Day $dayToClaim reward claimed! +$reward coins'
-                    : 'Day $dayToClaim reward claimed! +$reward coins'),
+                Text(
+                  isStreakReset
+                      ? 'Streak reset! Day $dayToClaim reward claimed! +$reward coins'
+                      : 'Day $dayToClaim reward claimed! +$reward coins',
+                ),
               ],
             ),
             duration: Duration(seconds: 2),
@@ -859,9 +907,13 @@ class _DailyLoginScreenState extends State<DailyLoginScreen>
         );
       }
 
+      await _analytics.logError('daily_reward_claim', e.toString());
       return Future.error('Failed to claim reward: $e');
+    } finally {
+      setState(() => _isClaiming = false);
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
